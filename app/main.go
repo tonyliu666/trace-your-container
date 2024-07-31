@@ -80,6 +80,9 @@ func main() {
 				}
 			}
 		}
+		for _, process := range containerProcess {
+			log.Info("pid: ", process.Pid)
+		}
 
 	}
 
