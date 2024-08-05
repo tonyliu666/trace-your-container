@@ -1,64 +1,76 @@
 //go:build ignore
 
-#include "common.h"
-#include <bpf/bpf_helpers.h>
+// #include "common.h"
+#include <linux/types.h>
+#include <iproute2/bpf_elf.h>
 #include <linux/bpf.h>
+#include <bpf/bpf_helpers.h>
+#include <stdint.h> // Add this line to include the header file that defines uint64_t
+
+
+// try to load the ebpf map from /sys/fs/bpf/outer_map
 
 char __license[] SEC("license") = "Dual MIT/GPL"; 
 
-// Define the template for the inner maps (e.g., protocol counts)
-struct bpf_map_def SEC("maps") inner_map_template = {
-    .type = BPF_MAP_TYPE_HASH,
-    .key_size = sizeof(u32),  // E.g., protocol number
-    .value_size = sizeof(u64), // Count of packets
-    .max_entries = 256,
+// Define the inner map template
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(key_size, sizeof(uint32_t));
+    __uint(value_size, sizeof(uint32_t));
+    __uint(max_entries, 100);  // Same as the Go spec
+} inner_map_template SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+    __uint(key_size, sizeof(uint32_t));
+    __uint(value_size, sizeof(uint32_t));  // Should be u32 (map FD)
+    __uint(max_entries, 5);  // Same as MaxEntries in Go code
+    __array(values, struct {
+		__uint(type, BPF_MAP_TYPE_ARRAY);
+		/* changing max_entries to 2 will fail during load
+		 * due to incompatibility with inner_map definition */
+		__uint(max_entries, 1);
+		__type(key, int);
+		__type(value, int);
+	});
+    
+} outer_map SEC(".maps") = {
+    // Initialize with the file descriptors of the inner maps (example)
+    // This can be set dynamically later
+    .values = {
+		(void *)&inner_map_template,
+			0,0,0,0
+	},
 };
 
-// Define the outer map
-struct bpf_map_def SEC("maps") outer_map = {
-    .type = BPF_MAP_TYPE_HASH_OF_MAPS,
-    .key_size = sizeof(u32),  // PID
-    .value_size = sizeof(u32), // Inner map id (u32 is standard)
-    .max_entries = 1024,
-    .map_flags = BPF_F_NO_PREALLOC,
-    .inner_map_idx = 0,  // Index of the template map in the ELF file
+// The correct structure for sys_enter tracepoint
+struct sys_enter_args {
+    uint64_t unused; // First argument is not used
+    uint64_t syscall_nr; // This is the syscall number
+    uint64_t args[6]; // Array of arguments to the syscall
 };
-
 
 SEC("tracepoint/syscalls/sys_enter")
-int collect_sys_calls(struct trace_event_raw_sys_enter *ctx) {
-    // Get the system call number
-    int syscall_nr = ctx->id;
+// int collect_sys_calls(struct trace_event_raw_sys_enter *ctx) {
+int collect_sys_calls(struct sys_enter_args *ctx) {
+	uint32_t key = 0;
+	uint32_t *inner_map_idx = bpf_map_lookup_elem(&outer_map, &key);
+	if (!inner_map_idx) {
+		return 0;
+	}
 
-    // Get the process ID (PID)
-    u32 pid = bpf_get_current_pid_tgid() >> 32;
-
-    // Output to the trace pipe (can be seen with `sudo cat /sys/kernel/debug/tracing/trace_pipe`)
-    bpf_printk("PID %d: Syscall %d\n", pid, syscall_nr);
+	struct bpf_map *inner_map = bpf_map_lookup_elem(&outer_map, inner_map_idx);
+	if (!inner_map) {
+		return 0;
+	}
 	
-	// Get the inner map for the current PID, if it exists, otherwise create a slot for it
-	u32 *inner_map_id = bpf_map_lookup_elem(&outer_map, &pid);
-	if (inner_map_id == NULL) {
-		// Create a new inner map
-		u32 inner_map_id = 0;
-		bpf_map_update_elem(&outer_map, &pid, &inner_map_id, BPF_ANY);
-	}
-	// Get the inner map for the current PID
-	u64 *inner_map = bpf_map_lookup_elem(&inner_map_template, inner_map_id);
-	// Increment the count for the current syscall
-	if (inner_map != NULL) {
-		u64 *count = bpf_map_lookup_elem(inner_map, &syscall_nr);
-		if (count != NULL) {
-			(*count)++;
-		} 
-		else {
-			(*count) = 1;
-		}
-	}
-	else {
-		bpf_printk("Inner map not found for PID %d\n", pid);
-	}
+	uint64_t syscall_nr = ctx->syscall_nr;
+	uint64_t *value = bpf_map_lookup_elem((void *)(inner_map), &syscall_nr);
+    if (!value) {
+        return 0;
+    }
 
-
-    return 0;
+	(*value)++;
+	return 0;
+	
 }

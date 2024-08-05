@@ -61,7 +61,8 @@ type syscallProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type syscallMapSpecs struct {
-	PktCount *ebpf.MapSpec `ebpf:"pkt_count"`
+	InnerMapTemplate *ebpf.MapSpec `ebpf:"inner_map_template"`
+	OuterMap         *ebpf.MapSpec `ebpf:"outer_map"`
 }
 
 // syscallObjects contains all objects after they have been loaded into the kernel.
@@ -83,12 +84,14 @@ func (o *syscallObjects) Close() error {
 //
 // It can be passed to loadSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type syscallMaps struct {
-	PktCount *ebpf.Map `ebpf:"pkt_count"`
+	InnerMapTemplate *ebpf.Map `ebpf:"inner_map_template"`
+	OuterMap         *ebpf.Map `ebpf:"outer_map"`
 }
 
 func (m *syscallMaps) Close() error {
 	return _SyscallClose(
-		m.PktCount,
+		m.InnerMapTemplate,
+		m.OuterMap,
 	)
 }
 
