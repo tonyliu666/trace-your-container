@@ -16,13 +16,13 @@ struct inner_map{
     __uint(type, BPF_MAP_TYPE_HASH);          // Inner map type
     __uint(key_size, sizeof(uint32_t));       // Key size of the inner map
     __uint(value_size, sizeof(uint32_t));     // Value size of the inner map
-    __uint(max_entries, 50);                  // Max entries in the inner map, must match Go code
+    __uint(max_entries, 5000);                  // Max entries in the inner map, must match Go code
 };
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);  // Outer map type
     __uint(key_size, sizeof(uint32_t));       // Key size of the outer map
-	__uint(max_entries, 1); 
+	__uint(max_entries, 1000); 
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
 

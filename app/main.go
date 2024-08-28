@@ -12,6 +12,24 @@ import (
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go syscall syscall_process.c -- -I../headers
+func readFileName(dirname string) ([]string, error) {
+	dir, err := os.Open(dirname)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+
+	// Read all the files in the directory
+	files, err := dir.Readdirnames(0) // 0 to read all files and directories
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+func init(){
+	
+}
+
 
 func main() {
 	if err := rlimit.RemoveMemlock(); err != nil {
@@ -24,15 +42,14 @@ func main() {
 		Type:       ebpf.HashOfMaps,
 		KeySize:    4,
 		ValueSize:  4,
-		MaxEntries: 1, // We'll have 5 maps inside this map
-
+		MaxEntries: 1000, // We'll have 5 maps inside this map
 	}
 	innerMapSpec := ebpf.MapSpec{
 		Name:       "inner_map",
 		Type:       ebpf.Hash,
 		KeySize:    4,
 		ValueSize:  4,
-		MaxEntries: 50,
+		MaxEntries: 5000,
 	}
 	outerMapSpec.InnerMap = &innerMapSpec
 
@@ -55,26 +72,19 @@ func main() {
 		log.Fatalf("loading objects: %v", err)
 	}
 	defer objs.Close()
+	objs.syscallMaps.OuterMap = outerMap
+
 	tp, err := link.AttachTracing(link.TracingOptions{
 		Program:    objs.BtfRawTracepointSysEnter,
 		AttachType: ebpf.AttachTraceRawTp,
 	})
-	
+
 	if err != nil {
 		log.Fatalf("attaching tracepoint: %v", err)
 	}
 	defer tp.Close()
 
-	dirname := "/sys/fs/cgroup/systemd/docker"
-
-	dir, err := os.Open(dirname)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer dir.Close()
-
-	// Read all the files in the directory
-	files, err := dir.Readdirnames(0) // 0 to read all files and directories
+	files, err := readFileName("/sys/fs/cgroup/systemd")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,13 +111,15 @@ func main() {
 		// print the cgroup status in cgroupList
 		for _, cg := range cgroupList {
 			for _, subsys := range cg.Subsystems() {
-				log.Infof("cgroup state: %s, subsystem: %s", cg.State(), subsys.Name())
 				processes, _ := cg.Tasks(subsys.Name(), true)
 				containerProcess = append(containerProcess, processes...)
 			}
 		}
 		for _, process := range containerProcess {
-			log.Info("pid: ", process.Pid)
+			// if process id not exists in the map, insert it
+			if err := outerMap.Put(uint32(process.Pid), uint32(0)); err != nil {
+				log.Fatalf("inserting process id: %v", err)
+			}
 		}
 
 	}
