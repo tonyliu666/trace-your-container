@@ -13,10 +13,10 @@
 char __license[] SEC("license") = "Dual MIT/GPL"; 
 
 struct inner_map{
-    __uint(type, BPF_MAP_TYPE_HASH);          // Inner map type
-    __uint(key_size, sizeof(uint32_t));       // Key size of the inner map
-    __uint(value_size, sizeof(uint32_t));     // Value size of the inner map
-    __uint(max_entries, 5000);                  // Max entries in the inner map, must match Go code
+    __uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 5000);
+	__type(key, sizeof(uint32_t));
+	__type(value, sizeof(uint32_t));
 };
 
 struct {
@@ -34,12 +34,33 @@ struct sys_enter_args {
     uint64_t args[6]; // Array of arguments to the syscall
 };
 
+
 SEC("tp_btf/sys_enter")
 int btf_raw_tracepoint__sys_enter(u64 *ctx) {
+    u32 key = 0;
+    uint32_t pid = (uint32_t)bpf_get_current_pid_tgid() >> 32;
    long int syscall_id = (long int)ctx[1];
    struct pt_regs *regs = (struct pt_regs *)ctx[0];
-   	// fetch the outer map
-	// struct bpf_map *outer_map = bpf_map_lookup_elem(&outer_map, &syscall_id);
-	bpf_printk("syscall_id: %d\n", syscall_id);
+    struct inner_map *inner_map = bpf_map_lookup_elem(&outer_map, &key);
+
+   bpf_printk("inner map size: %d\n", sizeof(inner_map));
+   if (inner_map == NULL) {
+       bpf_printk("inner map is NULL\n");
+       return 0;
+   }
+   else{
+        // insert the syscall_id into the inner map and the count of the syscall_id
+        uint32_t syscall_id_key = (uint32_t)syscall_id;
+        // uint32_t *count = bpf_map_lookup_elem(&inner_map, &syscall_id_key);
+        // if (count == NULL) {
+        //     uint32_t count = 1;
+        //     bpf_map_update_elem(&inner_map, &syscall_id_key, &count, BPF_ANY);
+        // } else {
+        //     (*count)++;
+        // }
+        // bpf_printk("pid: %d, syscall_id: %ld\n, system call count: %u\n", pid, syscall_id, *count);
+        bpf_printk("pid: %d, syscall_id: %ld\n", pid, syscall_id);
+    }
+    
 	return 0;
 }
