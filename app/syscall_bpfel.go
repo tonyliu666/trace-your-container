@@ -60,7 +60,7 @@ type syscallProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type syscallMapSpecs struct {
-	Im       *ebpf.MapSpec `ebpf:"im"`
+	InnerMap *ebpf.MapSpec `ebpf:"inner_map"`
 	OuterMap *ebpf.MapSpec `ebpf:"outer_map"`
 }
 
@@ -83,13 +83,13 @@ func (o *syscallObjects) Close() error {
 //
 // It can be passed to loadSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type syscallMaps struct {
-	Im       *ebpf.Map `ebpf:"im"`
+	InnerMap *ebpf.Map `ebpf:"inner_map"`
 	OuterMap *ebpf.Map `ebpf:"outer_map"`
 }
 
 func (m *syscallMaps) Close() error {
 	return _SyscallClose(
-		m.Im,
+		m.InnerMap,
 		m.OuterMap,
 	)
 }

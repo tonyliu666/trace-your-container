@@ -2,7 +2,8 @@ package main
 
 import (
 	"os"
-	"strconv"
+	// "strconv"
+	
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -46,10 +47,10 @@ func init() {
 	// Create the inner map spec for Array type
 	innerMapSpec := ebpf.MapSpec{
 		Name:       "inner_map",
-		Type:       ebpf.Hash,      // Type changed to Array to match BPF_MAP_TYPE_ARRAY
-		KeySize:    4,               // Size of keys in the inner map (uint32_t)
-		ValueSize:  4,               // Size of values in the inner map (uint32_t)
-		MaxEntries: 5000,            // Maximum number of entries in the inner map
+		Type:       ebpf.Hash, // Type changed to Array to match BPF_MAP_TYPE_ARRAY
+		KeySize:    4,         // Size of keys in the inner map (uint32_t)
+		ValueSize:  4,         // Size of values in the inner map (uint32_t)
+		MaxEntries: 5000,      // Maximum number of entries in the inner map
 	}
 	outerMapSpec.InnerMap = &innerMapSpec
 
@@ -66,8 +67,10 @@ func init() {
 			log.Info("outer_map already exists")
 		}
 	}
-
 }
+
+// create process id maps
+var processIDMaps = map[int]bool{}
 
 func main() {
 	objs := syscallObjects{}
@@ -77,7 +80,7 @@ func main() {
 	defer objs.Close()
 	objs.syscallMaps.OuterMap = outerMap
 
-	files, err := readFileName("/sys/fs/cgroup/systemd")
+	files, err := readFileName("/sys/fs/cgroup/systemd/docker")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,17 +104,29 @@ func main() {
 				cgroupList = append(cgroupList, cg)
 			}
 		}
+
 		// print the cgroup status in cgroupList
 		for _, cg := range cgroupList {
 			for _, subsys := range cg.Subsystems() {
 				processes, _ := cg.Tasks(subsys.Name(), true)
+
 				containerProcess = append(containerProcess, processes...)
 			}
+
 		}
+
+		// list all the processes in the subgroups of the cgroup
+		log.Infof("containerProcess: %v, length: %d", containerProcess, len(containerProcess))
 		for _, process := range containerProcess {
-			// create inner map for each process.ID
+			// examine whether the process id exists in the processIDMaps
+			if _, ok := processIDMaps[process.Pid]; ok {
+				continue
+			}
+			processIDMaps[process.Pid] = true
+
 			innerMapSpec := ebpf.MapSpec{
-				Name:       "inner_map_" + strconv.Itoa(process.Pid),
+				//Name: "inner_map_" + strconv.Itoa(process.Pid),
+				Name:       "inner_map",
 				Type:       ebpf.Hash,
 				KeySize:    4,
 				ValueSize:  4,
@@ -121,10 +136,9 @@ func main() {
 			if err != nil {
 				log.Fatalf("inner_map: %v", err)
 			}
-			// insert inner map into outer map, key is process.Pid
-			// if err := outerMap.Put(uint32(process.Pid), innerMap.FD()); err != nil {
-			// 	log.Fatalf("outerMap.Update: %v", err)
-			// }
+			log.Println("process.Pid: ", process.Pid)
+			// if process id not exists in the outer map, then create. Otherwise, skip
+
 			if err := outerMap.Put(uint32(process.Pid), innerMap); err != nil {
 				log.Fatalf("outerMap.Update: %v", err)
 			}

@@ -17,7 +17,7 @@ struct inner_map{
 	__uint(max_entries, 5000);
 	__type(key, uint32_t);
 	__type(value, uint32_t);
-} im SEC(".maps");
+} inner_map SEC(".maps");
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);  // Outer map type
@@ -37,30 +37,32 @@ struct sys_enter_args {
 
 SEC("tp_btf/sys_enter")
 int btf_raw_tracepoint__sys_enter(u64 *ctx) {
-    uint32_t key = 10;
-    uint32_t pid = (uint32_t)bpf_get_current_pid_tgid() >> 32;
-   long int syscall_id = (long int)ctx[1];
-   struct pt_regs *regs = (struct pt_regs *)ctx[0];
-   struct bpf_map *inner_map = bpf_map_lookup_elem(&outer_map, &key);
+    uint32_t key = 0;
+    uint32_t pid = (uint32_t)bpf_get_current_pid_tgid();
+    long int syscall_id = (long int)ctx[1];
+    struct pt_regs *regs = (struct pt_regs *)ctx[0];
+    void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
+   
+    if (inner_map == NULL) {
+        bpf_printk("process id: %u\n", pid);
+        bpf_printk("syscall_id: %ld\n", syscall_id);
+        bpf_printk("inner map is NULL\n");
+       return 0;
+    }
 
-   //bpf_printk("inner map size: ");
-//    if (inner_map == NULL) {
-//        bpf_printk("inner map is NULL\n");
-//        return 0;
-//    }
-//    else{
-//         // insert the syscall_id into the inner map and the count of the syscall_id
-//         uint32_t syscall_id_key = (uint32_t)syscall_id;
-//         uint32_t *count = bpf_map_lookup_elem(&inner_map, &syscall_id_key);
-//         // if (count == NULL) {
-        //     uint32_t count = 1;
-        //     bpf_map_update_elem(&inner_map, &syscall_id_key, &count, BPF_ANY);
-        // } else {
-        //     (*count)++;
-        // }
-        // bpf_printk("pid: %d, syscall_id: %ld\n, system call count: %u\n", pid, syscall_id, *count);
-    //    bpf_printk("pid: %d, syscall_id: %ld\n", pid, syscall_id);
-    //}
+   else{
+        // insert the syscall_id into the inner map and the count of the syscall_id
+        uint32_t syscall_id_key = (uint32_t)syscall_id;
+        bpf_printk("syscall_id_key: %u\n", syscall_id_key);
+        uint32_t *count = bpf_map_lookup_elem(inner_map, &syscall_id_key);
+        if (count == NULL) {
+            uint32_t count = 1;
+            bpf_map_update_elem(inner_map, &syscall_id_key, &count, BPF_ANY);
+        } else {
+            (*count)++;
+        }
+        
+    }
     
 	return 0;
 }
