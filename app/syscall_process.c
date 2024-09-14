@@ -5,8 +5,10 @@
 #include <iproute2/bpf_elf.h>
 // #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
+// #include "bpf_helpers.h"
 #include <stdint.h> // Add this line to include the header file that defines uint64_t
 #include <bpf/bpf_tracing.h>
+// #include "bpf_tracing.h"
 
 // try to load the ebpf map from /sys/fs/bpf/outer_map
 
@@ -35,25 +37,28 @@ struct sys_enter_args {
 };
 
 
-SEC("tp_btf/sys_enter")
-int btf_raw_tracepoint__sys_enter(u64 *ctx) {
+// SEC("tp_btf/sys_enter")
+SEC("raw_tracepoint/sys_enter")
+int raw_tracepoint__sys_enter(u64 *ctx) {
     uint32_t key = 0;
     uint32_t pid = (uint32_t)bpf_get_current_pid_tgid();
     long int syscall_id = (long int)ctx[1];
     struct pt_regs *regs = (struct pt_regs *)ctx[0];
     void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
+    bpf_printk("syscall_id_key: %ld\n", syscall_id);
+    bpf_printk("pid: %u\n", pid);
    
     if (inner_map == NULL) {
-        bpf_printk("process id: %u\n", pid);
-        bpf_printk("syscall_id: %ld\n", syscall_id);
-        bpf_printk("inner map is NULL\n");
+        // bpf_printk("process id: %u\n", pid);
+        // bpf_printk("syscall_id: %ld\n", syscall_id);
+        // bpf_printk("inner map is NULL\n");
        return 0;
     }
 
    else{
         // insert the syscall_id into the inner map and the count of the syscall_id
         uint32_t syscall_id_key = (uint32_t)syscall_id;
-        bpf_printk("syscall_id_key: %u\n", syscall_id_key);
+        
         uint32_t *count = bpf_map_lookup_elem(inner_map, &syscall_id_key);
         if (count == NULL) {
             uint32_t count = 1;

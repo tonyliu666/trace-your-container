@@ -3,19 +3,19 @@ package main
 import (
 	"os"
 	// "strconv"
-	
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
 	log "github.com/sirupsen/logrus"
+	
 
 	cgroups "github.com/containerd/cgroups"
 )
 
 var outerMap *ebpf.Map
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go syscall syscall_process.c -- -I../headers
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go syscall syscall_process.c -- -I../headers -target bpf
 func readFileName(dirname string) ([]string, error) {
 	dir, err := os.Open(dirname)
 	if err != nil {
@@ -73,11 +73,14 @@ func init() {
 var processIDMaps = map[int]bool{}
 
 func main() {
+	// pin the syscall_bpfeb.o to /sys/fs/bpf/syscall_bpfeb
 	objs := syscallObjects{}
 	if err := loadSyscallObjects(&objs, nil); err != nil {
 		log.Fatalf("loading objects: %v", err)
 	}
 	defer objs.Close()
+	
+
 	objs.syscallMaps.OuterMap = outerMap
 
 	files, err := readFileName("/sys/fs/cgroup/systemd/docker")
@@ -145,9 +148,9 @@ func main() {
 		}
 
 		// Attach the tracepoint
-		tp, err := link.AttachTracing(link.TracingOptions{
-			Program:    objs.BtfRawTracepointSysEnter,
-			AttachType: ebpf.AttachTraceRawTp,
+		tp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+			Name:    "sys_enter", // corresponds to the raw tracepoint name in SEC
+			Program: objs.syscallPrograms.RawTracepointSysEnter,
 		})
 
 		if err != nil {

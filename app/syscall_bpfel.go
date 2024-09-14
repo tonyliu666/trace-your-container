@@ -53,7 +53,7 @@ type syscallSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type syscallProgramSpecs struct {
-	BtfRawTracepointSysEnter *ebpf.ProgramSpec `ebpf:"btf_raw_tracepoint__sys_enter"`
+	RawTracepointSysEnter *ebpf.ProgramSpec `ebpf:"raw_tracepoint__sys_enter"`
 }
 
 // syscallMapSpecs contains maps before they are loaded into the kernel.
@@ -98,12 +98,12 @@ func (m *syscallMaps) Close() error {
 //
 // It can be passed to loadSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type syscallPrograms struct {
-	BtfRawTracepointSysEnter *ebpf.Program `ebpf:"btf_raw_tracepoint__sys_enter"`
+	RawTracepointSysEnter *ebpf.Program `ebpf:"raw_tracepoint__sys_enter"`
 }
 
 func (p *syscallPrograms) Close() error {
 	return _SyscallClose(
-		p.BtfRawTracepointSysEnter,
+		p.RawTracepointSysEnter,
 	)
 }
 
