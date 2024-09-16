@@ -47,7 +47,7 @@ int raw_tracepoint__sys_enter(u64 *ctx) {
     struct pt_regs *regs = (struct pt_regs *)ctx[0];
     void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
 
-   
+    bpf_printk("pid: %u\n", pid);
     if (inner_map == NULL) {
         // bpf_printk("process id: %u\n", pid);
         // bpf_printk("syscall_id: %ld\n", syscall_id);
