@@ -1,21 +1,25 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+
+	log "github.com/sirupsen/logrus"
+
 	// "strconv"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
-	log "github.com/sirupsen/logrus"
-	
-
 	cgroups "github.com/containerd/cgroups"
+	cgroup2 "github.com/containerd/cgroups/v3/cgroup2"
 )
 
 var outerMap *ebpf.Map
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go syscall syscall_process.c -- -I../headers -target bpf
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go syscall syscall_process.c -- -I../headers  -target bpf
 func readFileName(dirname string) ([]string, error) {
 	dir, err := os.Open(dirname)
 	if err != nil {
@@ -30,6 +34,7 @@ func readFileName(dirname string) ([]string, error) {
 	}
 	return files, nil
 }
+
 func init() {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		log.Fatal(err)
@@ -70,7 +75,7 @@ func init() {
 }
 
 // create process id maps
-var processIDMaps = map[int]bool{}
+var processIDMaps = map[uint64]bool{}
 
 func main() {
 	// pin the syscall_bpfeb.o to /sys/fs/bpf/syscall_bpfeb
@@ -79,40 +84,61 @@ func main() {
 		log.Fatalf("loading objects: %v", err)
 	}
 	defer objs.Close()
-	
 
 	objs.syscallMaps.OuterMap = outerMap
 
-	files, err := readFileName("/sys/fs/cgroup/systemd/docker")
+	dirPath := "/sys/fs/cgroup/system.slice"
+
+	files, err := filepath.Glob(filepath.Join(dirPath, "docker-*.scope"))
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("Error reading directory: %v\n", err)
+		return
 	}
 
+	// Remove the "/sys/fs/cgroup" prefix from each file path
+	var updatedFiles []string
+	prefixToRemove := "/sys/fs/cgroup"
+	for _, file := range files {
+		updatedFile := strings.TrimPrefix(file, prefixToRemove)
+		updatedFiles = append(updatedFiles, updatedFile)
+	}
+	log.Println("updatedFiles: ", updatedFiles)
 	var cgroupV2 bool
-	cgroupList := []cgroups.Cgroup{}
 
 	if cgroups.Mode() == cgroups.Unified {
 		cgroupV2 = true
 	}
 	log.Infof("cgroupV2: %v", cgroupV2)
 
-	if !cgroupV2 {
-		containerProcess := []cgroups.Process{}
-		for _, cgroupPath := range files {
-			if len(cgroupPath) == 64 {
-				cg, err := cgroups.Load(cgroups.Systemd, cgroups.StaticPath("/docker/"+cgroupPath))
-				if err != nil {
-					log.Fatal(err)
+	if cgroupV2 {
+		// containerProcess := []cgroups.Process{}
+		for _, cgroupPath := range updatedFiles {
+			//baseName := filepath.Base(cgroupPath)
+			// load the group which belongs to system.slice
+			log.Info("cgroupPath: ", cgroupPath)
+			cg, err := cgroup2.Load(cgroupPath)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			processIDList, err := cg.Procs(true)
+			if err != nil {
+				log.Fatal(err)
+			}
+			for _, processID := range processIDList {
+				if _, ok := processIDMaps[processID]; ok {
+					continue
 				}
-				cgroupList = append(cgroupList, cg)
+				processIDMaps[processID] = true
+
 			}
 		}
+		log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
 
-		// print the cgroup status in cgroupList
+		// 	// print the cgroup status in cgroupList
 		for _, cg := range cgroupList {
 			for _, subsys := range cg.Subsystems() {
 				processes, _ := cg.Tasks(subsys.Name(), true)
-
 				containerProcess = append(containerProcess, processes...)
 			}
 

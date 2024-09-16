@@ -4,10 +4,11 @@
 #include <linux/types.h>
 #include <iproute2/bpf_elf.h>
 // #include <linux/bpf.h>
-#include <bpf/bpf_helpers.h>
+#include <bpf_helpers.h>
+#include <bpf_tracing.h>
 // #include "bpf_helpers.h"
 #include <stdint.h> // Add this line to include the header file that defines uint64_t
-#include <bpf/bpf_tracing.h>
+
 // #include "bpf_tracing.h"
 
 // try to load the ebpf map from /sys/fs/bpf/outer_map
