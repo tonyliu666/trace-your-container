@@ -135,23 +135,8 @@ func main() {
 		}
 		log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
 
-		// 	// print the cgroup status in cgroupList
-		for _, cg := range cgroupList {
-			for _, subsys := range cg.Subsystems() {
-				processes, _ := cg.Tasks(subsys.Name(), true)
-				containerProcess = append(containerProcess, processes...)
-			}
-
-		}
-
-		// list all the processes in the subgroups of the cgroup
-		log.Infof("containerProcess: %v, length: %d", containerProcess, len(containerProcess))
-		for _, process := range containerProcess {
+		for pid, _ := range processIDMaps {
 			// examine whether the process id exists in the processIDMaps
-			if _, ok := processIDMaps[process.Pid]; ok {
-				continue
-			}
-			processIDMaps[process.Pid] = true
 
 			innerMapSpec := ebpf.MapSpec{
 				//Name: "inner_map_" + strconv.Itoa(process.Pid),
@@ -165,10 +150,10 @@ func main() {
 			if err != nil {
 				log.Fatalf("inner_map: %v", err)
 			}
-			log.Println("process.Pid: ", process.Pid)
+			log.Println("process.Pid: ", pid)
 			// if process id not exists in the outer map, then create. Otherwise, skip
 
-			if err := outerMap.Put(uint32(process.Pid), innerMap); err != nil {
+			if err := outerMap.Put(uint32(pid), innerMap); err != nil {
 				log.Fatalf("outerMap.Update: %v", err)
 			}
 		}

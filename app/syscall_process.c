@@ -46,8 +46,7 @@ int raw_tracepoint__sys_enter(u64 *ctx) {
     long int syscall_id = (long int)ctx[1];
     struct pt_regs *regs = (struct pt_regs *)ctx[0];
     void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
-    bpf_printk("syscall_id_key: %ld\n", syscall_id);
-    bpf_printk("pid: %u\n", pid);
+
    
     if (inner_map == NULL) {
         // bpf_printk("process id: %u\n", pid);
@@ -57,6 +56,7 @@ int raw_tracepoint__sys_enter(u64 *ctx) {
     }
 
    else{
+        bpf_printk("syscall_id_key: %ld\n", syscall_id);
         // insert the syscall_id into the inner map and the count of the syscall_id
         uint32_t syscall_id_key = (uint32_t)syscall_id;
         
