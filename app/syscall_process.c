@@ -17,7 +17,7 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 
 struct inner_map{
     __uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, 5000);
+	__uint(max_entries, 47069); // TODO: fix hard-coded value
 	__type(key, uint32_t);
 	__type(value, uint32_t);
 } inner_map SEC(".maps");
@@ -25,18 +25,11 @@ struct inner_map{
 struct {
     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);  // Outer map type
     __type(key, uint32_t);       // Key size of the outer map
-	__uint(max_entries, 1000); 
+	__uint(max_entries, 1024); 
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
 
     
-// The correct structure for sys_enter tracepoint
-struct sys_enter_args {
-    uint64_t unused; // First argument is not used
-    uint64_t syscall_nr; // This is the syscall number
-    uint64_t args[6]; // Array of arguments to the syscall
-};
-
 
 // SEC("tp_btf/sys_enter")
 SEC("raw_tracepoint/sys_enter")
@@ -47,7 +40,6 @@ int raw_tracepoint__sys_enter(u64 *ctx) {
     struct pt_regs *regs = (struct pt_regs *)ctx[0];
     void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
 
-    bpf_printk("pid: %u\n", pid);
     if (inner_map == NULL) {
         // bpf_printk("process id: %u\n", pid);
         // bpf_printk("syscall_id: %ld\n", syscall_id);

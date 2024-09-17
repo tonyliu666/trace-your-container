@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -18,6 +21,9 @@ import (
 )
 
 var outerMap *ebpf.Map
+
+// read the output "max user processes" from ulimit -a
+var maxMumProcessSizeInContainer int
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go syscall syscall_process.c -- -I../headers  -target bpf
 func readFileName(dirname string) ([]string, error) {
@@ -35,10 +41,44 @@ func readFileName(dirname string) ([]string, error) {
 	return files, nil
 }
 
+func getSystemMaxProcessNumber() (int, error) {
+	cmd := exec.Command("bash", "-c", "ulimit -a")
+
+	// Run the command and capture the output
+	output, err := cmd.Output()
+	if err != nil {
+		log.Fatalf("Error running command: %v", err)
+	}
+	// Convert the output to a string
+	outputStr := string(output)
+	// only read the value of "max user processes"
+	outputStr = outputStr[strings.Index(outputStr, "max user processes"):]
+	maxProcessNum, _ := strconv.Atoi(strings.Fields(outputStr)[4])
+	return maxProcessNum, nil
+
+}
+func createInnerMapSpec(pid uint64) ebpf.MapSpec {
+	fill_portion := ""
+	if pid != 0 {
+		fill_portion = strconv.Itoa(int(pid))
+	}
+
+	innerMapSpec := ebpf.MapSpec{
+		Name:       "inner_map" + fill_portion,
+		Type:       ebpf.Hash,                            // Type changed to Array to match BPF_MAP_TYPE_ARRAY
+		KeySize:    4,                                    // Size of keys in the inner map (uint32_t)
+		ValueSize:  4,                                    // Size of values in the inner map (uint32_t)
+		MaxEntries: uint32(maxMumProcessSizeInContainer), // Maximum number of entries in the inner map
+	}
+	return innerMapSpec
+}
+
 func init() {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		log.Fatal(err)
 	}
+	// set the maxium number of processes can run in one single container
+	maxMumProcessSizeInContainer, _ = getSystemMaxProcessNumber()
 
 	/// Create the outer map spec for Hash of Maps
 	outerMapSpec := ebpf.MapSpec{
@@ -46,17 +86,11 @@ func init() {
 		Type:       ebpf.HashOfMaps, // Type matches BPF_MAP_TYPE_HASH_OF_MAPS
 		KeySize:    4,               // Size of keys in the outer map (uint32_t)
 		ValueSize:  4,               // Size of each value (fd of inner map)
-		MaxEntries: 1000,            // Maximum number of entries (keys) in the outer map
+		MaxEntries: 1024,            // Maximum number of entries (keys) in the outer map
 	}
-
 	// Create the inner map spec for Array type
-	innerMapSpec := ebpf.MapSpec{
-		Name:       "inner_map",
-		Type:       ebpf.Hash, // Type changed to Array to match BPF_MAP_TYPE_ARRAY
-		KeySize:    4,         // Size of keys in the inner map (uint32_t)
-		ValueSize:  4,         // Size of values in the inner map (uint32_t)
-		MaxEntries: 5000,      // Maximum number of entries in the inner map
-	}
+	innerMapSpec := createInnerMapSpec(uint64(0))
+
 	outerMapSpec.InnerMap = &innerMapSpec
 
 	// All inner maps are created and inserted into the outer map spec,
@@ -74,8 +108,32 @@ func init() {
 	}
 }
 
-// create process id maps
-var processIDMaps = map[uint64]bool{}
+// create process id maps, value  is the list of uint64
+var processIDMaps = make(map[uint64][]uint64)
+
+func getParentPID(pid int) (int, error) {
+	// Read the /proc/[pid]/stat file
+	statPath := fmt.Sprintf("/proc/%d/stat", pid)
+	data, err := ioutil.ReadFile(statPath)
+	if err != nil {
+		return 0, err
+	}
+
+	// The PPID is the 4th field in the stat file (after the process name)
+	// Example: "12345 (bash) S 6789 ..."
+	fields := strings.Fields(string(data))
+	if len(fields) < 4 {
+		return 0, fmt.Errorf("unexpected format in %s", statPath)
+	}
+
+	// Parse the PPID from the 4th field
+	ppid, err := strconv.Atoi(fields[3])
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse PPID: %v", err)
+	}
+
+	return ppid, nil
+}
 
 func main() {
 	// pin the syscall_bpfeb.o to /sys/fs/bpf/syscall_bpfeb
@@ -102,7 +160,7 @@ func main() {
 		updatedFile := strings.TrimPrefix(file, prefixToRemove)
 		updatedFiles = append(updatedFiles, updatedFile)
 	}
-	log.Println("updatedFiles: ", updatedFiles)
+
 	var cgroupV2 bool
 
 	if cgroups.Mode() == cgroups.Unified {
@@ -115,42 +173,35 @@ func main() {
 		for _, cgroupPath := range updatedFiles {
 			//baseName := filepath.Base(cgroupPath)
 			// load the group which belongs to system.slice
-			log.Info("cgroupPath: ", cgroupPath)
 			cg, err := cgroup2.Load(cgroupPath)
 			if err != nil {
 				log.Fatal(err)
 			}
 
 			processIDList, err := cg.Procs(true)
+
 			if err != nil {
 				log.Fatal(err)
 			}
-			for _, processID := range processIDList {
-				if _, ok := processIDMaps[processID]; ok {
-					continue
-				}
-				processIDMaps[processID] = true
+			parentPID, err := getParentPID(int(processIDList[0]))
+			if err != nil {
+				log.Fatal(err)
+			}
 
+			for _, processID := range processIDList {
+				processIDMaps[uint64(parentPID)] = append(processIDMaps[uint64(parentPID)], processID)
 			}
 		}
 		log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
 
 		for pid, _ := range processIDMaps {
 			// examine whether the process id exists in the processIDMaps
-
-			innerMapSpec := ebpf.MapSpec{
-				//Name: "inner_map_" + strconv.Itoa(process.Pid),
-				Name:       "inner_map",
-				Type:       ebpf.Hash,
-				KeySize:    4,
-				ValueSize:  4,
-				MaxEntries: 5000,
-			}
+			innerMapSpec := createInnerMapSpec(pid)
 			innerMap, err := ebpf.NewMap(&innerMapSpec)
 			if err != nil {
 				log.Fatalf("inner_map: %v", err)
 			}
-			log.Println("process.Pid: ", pid)
+
 			// if process id not exists in the outer map, then create. Otherwise, skip
 
 			if err := outerMap.Put(uint32(pid), innerMap); err != nil {
