@@ -2,13 +2,15 @@
 
 #include "common.h"
 #include <linux/types.h>
-#include <iproute2/bpf_elf.h>
 // #include <linux/bpf.h>
 #include <bpf_helpers.h>
 #include <bpf_tracing.h>
-// #include "bpf_helpers.h"
 #include <stdint.h> // Add this line to include the header file that defines uint64_t
-
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+// #include <bpf/bpf.h>
 // #include "bpf_tracing.h"
 
 // try to load the ebpf map from /sys/fs/bpf/outer_map
@@ -29,21 +31,52 @@ struct {
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
 
-    
+
+#define MAX_LINE_LEN 256
+
+// Function to check if the process is in a Docker container
+int checkProcessIsInDocker(uint32_t pid) {
+    char proc_path[MAX_LINE_LEN];
+    snprintf(proc_path, sizeof(proc_path), "/proc/%d/cgroup", pid);
+
+    FILE *file = fopen(proc_path, "r");
+    if (!file) {
+        perror("Failed to open cgroup file");
+        return false;
+    }
+
+    char line[MAX_LINE_LEN];
+    bool is_docker = false;
+    while (fgets(line, sizeof(line), file)) {
+        if (strstr(line, "docker-")) {  // Check for Docker cgroup pattern
+            is_docker = true;
+            break;
+        }
+    }
+
+    fclose(file);
+    return is_docker;
+}
+   
 
 // SEC("tp_btf/sys_enter")
 SEC("raw_tracepoint/sys_enter")
-int raw_tracepoint__sys_enter(u64 *ctx) {
-    uint32_t key = 0;
+int raw_tracepoint__sys_enter(uint64_t *ctx) {
+    uint32_t key;
     uint32_t pid = (uint32_t)bpf_get_current_pid_tgid();
+
+    // Check if the process is in a Docker container
+    if (!checkProcessIsInDocker(pid)) {   
+        return 0;
+    }
+    bpf_printk("pid: %d\n", pid);
+ 
     long int syscall_id = (long int)ctx[1];
     struct pt_regs *regs = (struct pt_regs *)ctx[0];
     void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
 
     if (inner_map == NULL) {
-        // bpf_printk("process id: %u\n", pid);
-        // bpf_printk("syscall_id: %ld\n", syscall_id);
-        // bpf_printk("inner map is NULL\n");
+        bpf_printk("inner_map is NULL\n");
        return 0;
     }
 

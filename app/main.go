@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,30 +110,6 @@ func init() {
 // create process id maps, value  is the list of uint64
 var processIDMaps = make(map[uint64][]uint64)
 
-func getParentPID(pid int) (int, error) {
-	// Read the /proc/[pid]/stat file
-	statPath := fmt.Sprintf("/proc/%d/stat", pid)
-	data, err := ioutil.ReadFile(statPath)
-	if err != nil {
-		return 0, err
-	}
-
-	// The PPID is the 4th field in the stat file (after the process name)
-	// Example: "12345 (bash) S 6789 ..."
-	fields := strings.Fields(string(data))
-	if len(fields) < 4 {
-		return 0, fmt.Errorf("unexpected format in %s", statPath)
-	}
-
-	// Parse the PPID from the 4th field
-	ppid, err := strconv.Atoi(fields[3])
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse PPID: %v", err)
-	}
-
-	return ppid, nil
-}
-
 func main() {
 	// pin the syscall_bpfeb.o to /sys/fs/bpf/syscall_bpfeb
 	objs := syscallObjects{}
@@ -183,13 +158,11 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			parentPID, err := getParentPID(int(processIDList[0]))
-			if err != nil {
-				log.Fatal(err)
-			}
 
-			for _, processID := range processIDList {
-				processIDMaps[uint64(parentPID)] = append(processIDMaps[uint64(parentPID)], processID)
+			for i, processID := range processIDList {
+				if i != 0 {
+					processIDMaps[processIDList[0]] = append(processIDMaps[uint64(processIDList[0])], processID)
+				}
 			}
 		}
 		log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
@@ -207,6 +180,12 @@ func main() {
 			if err := outerMap.Put(uint32(pid), innerMap); err != nil {
 				log.Fatalf("outerMap.Update: %v", err)
 			}
+			// put all the process id in containerIDList into the inner map
+			// for _, containerID := range containerIDList {
+			// 	if err := innerMap.Put(uint32(containerID), uint32(0)); err != nil {
+			// 		log.Fatalf("innerMap.Update: %v", err)
+			// 	}
+			// }
 		}
 
 		// Attach the tracepoint
