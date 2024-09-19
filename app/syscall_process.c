@@ -7,10 +7,6 @@
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
 
-
-// #include <bpf/bpf.h>
-// #include "bpf_tracing.h"
-
 // try to load the ebpf map from /sys/fs/bpf/outer_map
 
 char __license[] SEC("license") = "Dual MIT/GPL"; 
@@ -30,27 +26,22 @@ struct {
 } outer_map SEC(".maps");
 
 
-
-
 SEC("raw_tracepoint/cgroup_mkdir")
 int on_cgroup_create(__u64 *ctx) {
-    // char cgroup_path[128];
+    char cgroup_path[128];
     const char *path = (const char *) ctx[1];
+    const char *compare_path = "/system.slice/docker";
+
     u64 cgroup_id = ctx[0]; 
     
-    // BPF_CORE_READ(cgrp, root, hierarchy_id);
+    bpf_probe_read_str(cgroup_path, sizeof(cgroup_path), path);
     
     // Copy the cgroup path from the event context
     
-    // failed here
-    if (bpf_strncmp(path, "/sys/fs/cgroup/docker", 21) == 0) {
-        bpf_printk("Docker container cgroup created: %s\n", path);
+    if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
+        bpf_printk("cgroup_id: %llu\n", cgroup_id);       // Use %llu for 64-bit unsigned integers
+        bpf_printk("cgroup_path: %s\n", path);             // Use %s for strings
     }
-
-
-    bpf_printk("cgroup_id: %llu\n", cgroup_id);       // Use %llu for 64-bit unsigned integers
-    bpf_printk("cgroup_path: %s\n", path);             // Use %s for strings
-    
 
     return 0;
 }
