@@ -135,6 +135,7 @@ func main() {
 		updatedFile := strings.TrimPrefix(file, prefixToRemove)
 		updatedFiles = append(updatedFiles, updatedFile)
 	}
+	log.Infof("updatedFiles: %v", updatedFiles)
 
 	var cgroupV2 bool
 
@@ -159,10 +160,8 @@ func main() {
 				log.Fatal(err)
 			}
 
-			for i, processID := range processIDList {
-				if i != 0 {
-					processIDMaps[processIDList[0]] = append(processIDMaps[uint64(processIDList[0])], processID)
-				}
+			for _, processID := range processIDList {
+				processIDMaps[processIDList[0]] = append(processIDMaps[uint64(processIDList[0])], processID)
 			}
 		}
 		log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))

@@ -53,6 +53,7 @@ type syscallSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type syscallProgramSpecs struct {
+	OnCgroupCreate        *ebpf.ProgramSpec `ebpf:"on_cgroup_create"`
 	RawTracepointSysEnter *ebpf.ProgramSpec `ebpf:"raw_tracepoint__sys_enter"`
 }
 
@@ -98,11 +99,13 @@ func (m *syscallMaps) Close() error {
 //
 // It can be passed to loadSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type syscallPrograms struct {
+	OnCgroupCreate        *ebpf.Program `ebpf:"on_cgroup_create"`
 	RawTracepointSysEnter *ebpf.Program `ebpf:"raw_tracepoint__sys_enter"`
 }
 
 func (p *syscallPrograms) Close() error {
 	return _SyscallClose(
+		p.OnCgroupCreate,
 		p.RawTracepointSysEnter,
 	)
 }
