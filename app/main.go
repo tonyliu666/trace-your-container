@@ -145,9 +145,7 @@ func main() {
 	log.Infof("cgroupV2: %v", cgroupV2)
 
 	if cgroupV2 {
-		// containerProcess := []cgroups.Process{}
 		for _, cgroupPath := range updatedFiles {
-			//baseName := filepath.Base(cgroupPath)
 			// load the group which belongs to system.slice
 			cg, err := cgroup2.Load(cgroupPath)
 			if err != nil {

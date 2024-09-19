@@ -39,8 +39,7 @@ int on_cgroup_create(__u64 *ctx) {
     // Copy the cgroup path from the event context
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
-        bpf_printk("cgroup_id: %llu\n", cgroup_id);       // Use %llu for 64-bit unsigned integers
-        bpf_printk("cgroup_path: %s\n", path);             // Use %s for strings
+        // TODO: update the outer map
     }
 
     return 0;
@@ -56,9 +55,9 @@ int raw_tracepoint__sys_enter(__u64 *ctx) {
     // Check if the process is in a Docker container
     // struct task_struct *task = (struct task_struct *)bpf_get_current_task();
     u64 cgroup_id = bpf_get_current_cgroup_id();
-    // bpf_printk("cgroup_id: %ld\n", cgroup_id);
+    bpf_printk("pid: %d\n", pid);
+    bpf_printk("cgroup_id: %ld\n", cgroup_id);
  
-    
     struct pt_regs *regs = (struct pt_regs *)ctx[0];
     void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
 
