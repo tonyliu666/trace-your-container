@@ -61,8 +61,9 @@ type syscallProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type syscallMapSpecs struct {
-	InnerMap *ebpf.MapSpec `ebpf:"inner_map"`
-	OuterMap *ebpf.MapSpec `ebpf:"outer_map"`
+	CgroupEvents *ebpf.MapSpec `ebpf:"cgroup_events"`
+	InnerMap     *ebpf.MapSpec `ebpf:"inner_map"`
+	OuterMap     *ebpf.MapSpec `ebpf:"outer_map"`
 }
 
 // syscallObjects contains all objects after they have been loaded into the kernel.
@@ -84,12 +85,14 @@ func (o *syscallObjects) Close() error {
 //
 // It can be passed to loadSyscallObjects or ebpf.CollectionSpec.LoadAndAssign.
 type syscallMaps struct {
-	InnerMap *ebpf.Map `ebpf:"inner_map"`
-	OuterMap *ebpf.Map `ebpf:"outer_map"`
+	CgroupEvents *ebpf.Map `ebpf:"cgroup_events"`
+	InnerMap     *ebpf.Map `ebpf:"inner_map"`
+	OuterMap     *ebpf.Map `ebpf:"outer_map"`
 }
 
 func (m *syscallMaps) Close() error {
 	return _SyscallClose(
+		m.CgroupEvents,
 		m.InnerMap,
 		m.OuterMap,
 	)

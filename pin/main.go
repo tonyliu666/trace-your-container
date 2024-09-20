@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,6 +35,7 @@ func getCurrentCgroupID(pid uint64) (uint64, error) {
 	if cgroupPath == "" {
 		return 0, fmt.Errorf("cgroup path not found in /proc/self/cgroup")
 	}
+	log.Println("cgroupPath:", cgroupPath)
 
 	// Construct the full path to the cgroup directory
 	cgroupFullPath := filepath.Join("/sys/fs/cgroup", cgroupPath)
@@ -48,7 +50,7 @@ func getCurrentCgroupID(pid uint64) (uint64, error) {
 }
 
 func main() {
-	cgroupID, err := getCurrentCgroupID(uint64(81067))
+	cgroupID, err := getCurrentCgroupID(uint64(37409))
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

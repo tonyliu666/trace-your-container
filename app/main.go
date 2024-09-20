@@ -11,6 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	// "strconv"
+	"docker_cgroup/cgroup"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -20,25 +21,12 @@ import (
 )
 
 var outerMap *ebpf.Map
+var perfMap *ebpf.Map
 
 // read the output "max user processes" from ulimit -a
 var maxMumProcessSizeInContainer int
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go syscall syscall_process.c -- -I../headers  -target bpf
-func readFileName(dirname string) ([]string, error) {
-	dir, err := os.Open(dirname)
-	if err != nil {
-		return nil, err
-	}
-	defer dir.Close()
-
-	// Read all the files in the directory
-	files, err := dir.Readdirnames(0) // 0 to read all files and directories
-	if err != nil {
-		return nil, err
-	}
-	return files, nil
-}
 
 func getSystemMaxProcessNumber() (int, error) {
 	cmd := exec.Command("bash", "-c", "ulimit -a")
@@ -72,13 +60,7 @@ func createInnerMapSpec(pid uint64) ebpf.MapSpec {
 	return innerMapSpec
 }
 
-func init() {
-	if err := rlimit.RemoveMemlock(); err != nil {
-		log.Fatal(err)
-	}
-	// set the maxium number of processes can run in one single container
-	maxMumProcessSizeInContainer, _ = getSystemMaxProcessNumber()
-
+func createOuterMap() error {
 	/// Create the outer map spec for Hash of Maps
 	outerMapSpec := ebpf.MapSpec{
 		Name:       "outer_map",
@@ -95,16 +77,57 @@ func init() {
 	// All inner maps are created and inserted into the outer map spec,
 	outer_map, err := ebpf.NewMap(&outerMapSpec)
 	if err != nil {
-		log.Fatalf("outer_map: %v", err)
+		return err
 	}
 	outerMap = outer_map
 
 	// Pin the outer map
 	if err := outerMap.Pin("/sys/fs/bpf/outer_map"); err != nil {
+		return err
+	}
+	return nil
+}
+func perfEventArrayMap() error {
+	mapSpec := &ebpf.MapSpec{
+		Type:       ebpf.PerfEventArray, // Equivalent to BPF_MAP_TYPE_PERF_EVENT_ARRAY
+		KeySize:    4,                   // sizeof(u32) = 4 bytes
+		ValueSize:  4,                   // sizeof(u32) = 4 bytes
+		MaxEntries: 64,                  // Set max_entries to the number of available CPUs
+	}
+
+	// Create the map
+	cgroupEventsMap, err := ebpf.NewMap(mapSpec)
+	if err != nil {
+		log.Fatalf("failed to create perf event array map: %v", err)
+	}
+	perfMap = cgroupEventsMap
+	if err := outerMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func init() {
+	if err := rlimit.RemoveMemlock(); err != nil {
+		log.Fatal(err)
+	}
+	// set the maxium number of processes can run in one single container
+	maxMumProcessSizeInContainer, _ = getSystemMaxProcessNumber()
+	if err := createOuterMap(); err != nil {
 		if _, ok := err.(*os.PathError); !ok {
-			log.Info("outer_map already exists")
+			log.Info("outer map already exists")
+		} else {
+			log.Fatalf("creating outer map: %v", err)
 		}
 	}
+	if err := perfEventArrayMap(); err != nil {
+		if _, ok := err.(*os.PathError); !ok {
+			log.Info("perf event array map already exists")
+		} else {
+			log.Fatalf("creating perf event array map: %v", err)
+		}
+	}
+
 }
 
 // create process id maps, value  is the list of uint64
@@ -135,7 +158,6 @@ func main() {
 		updatedFile := strings.TrimPrefix(file, prefixToRemove)
 		updatedFiles = append(updatedFiles, updatedFile)
 	}
-	log.Infof("updatedFiles: %v", updatedFiles)
 
 	var cgroupV2 bool
 
@@ -159,30 +181,29 @@ func main() {
 			}
 
 			for _, processID := range processIDList {
-				processIDMaps[processIDList[0]] = append(processIDMaps[uint64(processIDList[0])], processID)
+				// get  inode number of the cgroup id
+				cgroupInodeNum, err := cgroup.GetCurrentCgroupID(uint64(processID))
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				processIDMaps[cgroupInodeNum] = append(processIDMaps[uint64(cgroupInodeNum)], processID)
 			}
 		}
 		log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
 
-		for pid, _ := range processIDMaps {
+		for cgroupInodeNum, _ := range processIDMaps {
 			// examine whether the process id exists in the processIDMaps
-			innerMapSpec := createInnerMapSpec(pid)
+			innerMapSpec := createInnerMapSpec(cgroupInodeNum)
 			innerMap, err := ebpf.NewMap(&innerMapSpec)
 			if err != nil {
 				log.Fatalf("inner_map: %v", err)
 			}
 
-			// if process id not exists in the outer map, then create. Otherwise, skip
-
-			if err := outerMap.Put(uint32(pid), innerMap); err != nil {
+			if err := outerMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
 				log.Fatalf("outerMap.Update: %v", err)
 			}
-			// put all the process id in containerIDList into the inner map
-			// for _, containerID := range containerIDList {
-			// 	if err := innerMap.Put(uint32(containerID), uint32(0)); err != nil {
-			// 		log.Fatalf("innerMap.Update: %v", err)
-			// 	}
-			// }
+
 		}
 
 		// Attach the tracepoint

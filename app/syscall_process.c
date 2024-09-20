@@ -26,20 +26,28 @@ struct {
 } outer_map SEC(".maps");
 
 
+struct {
+	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+	__uint(key_size, sizeof(u32));
+	__uint(value_size, sizeof(u32));
+} cgroup_events SEC(".maps");
+
 SEC("raw_tracepoint/cgroup_mkdir")
 int on_cgroup_create(__u64 *ctx) {
     char cgroup_path[128];
     const char *path = (const char *) ctx[1];
     const char *compare_path = "/system.slice/docker";
 
-    u64 cgroup_id = ctx[0]; 
+    u32 cgroup_id = (u32)ctx[0]; 
     
     bpf_probe_read_str(cgroup_path, sizeof(cgroup_path), path);
     
     // Copy the cgroup path from the event context
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
-        // TODO: update the outer map
+        // TODO: create an entry in the outer map
+        bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
+        bpf_printk("send cgroup id to perf event array\n");
     }
 
     return 0;
@@ -50,31 +58,26 @@ SEC("raw_tracepoint/sys_enter")
 int raw_tracepoint__sys_enter(__u64 *ctx) {
     u32 key;
     u32 pid = (u32)bpf_get_current_pid_tgid();
-    u32 syscall_id = (u32)ctx[1];
+    u32 syscallID = (u32)ctx[1];
 
     // Check if the process is in a Docker container
     // struct task_struct *task = (struct task_struct *)bpf_get_current_task();
-    u64 cgroup_id = bpf_get_current_cgroup_id();
-    bpf_printk("pid: %d\n", pid);
-    bpf_printk("cgroup_id: %ld\n", cgroup_id);
- 
-    struct pt_regs *regs = (struct pt_regs *)ctx[0];
-    void *inner_map = bpf_map_lookup_elem(&outer_map, &pid);
+    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    void *inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
 
     if (inner_map == NULL) {
-        // bpf_printk("inner_map is NULL\n");
        return 0;
     }
 
    else{
-        bpf_printk("syscall_id_key: %ld\n", syscall_id);
-        // insert the syscall_id into the inner map and the count of the syscall_id
-        u32 syscall_id_key = syscall_id;
+        bpf_printk("syscallID_key: %ld\n", syscallID);
+        // insert the syscallID into the inner map and the count of the syscallID
+        u32 syscallID_key = syscallID;
         
-        u32 *count = bpf_map_lookup_elem(inner_map, &syscall_id_key);
+        u32 *count = bpf_map_lookup_elem(inner_map, &syscallID_key);
         if (count == NULL) {
             u32 count = 1;
-            bpf_map_update_elem(inner_map, &syscall_id_key, &count, BPF_ANY);
+            bpf_map_update_elem(inner_map, &syscallID_key, &count, BPF_ANY);
         } else {
             (*count)++;
         }
