@@ -12,11 +12,12 @@ import (
 
 	// "strconv"
 	"docker_cgroup/cgroup"
+	"docker_cgroup/perf"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"
-	cgroups "github.com/containerd/cgroups"
+	"github.com/containerd/cgroups"
 	cgroup2 "github.com/containerd/cgroups/v3/cgroup2"
 )
 
@@ -89,10 +90,9 @@ func createOuterMap() error {
 }
 func perfEventArrayMap() error {
 	mapSpec := &ebpf.MapSpec{
-		Type:       ebpf.PerfEventArray, // Equivalent to BPF_MAP_TYPE_PERF_EVENT_ARRAY
-		KeySize:    4,                   // sizeof(u32) = 4 bytes
-		ValueSize:  4,                   // sizeof(u32) = 4 bytes
-		MaxEntries: 64,                  // Set max_entries to the number of available CPUs
+		Type:      ebpf.PerfEventArray,
+		KeySize:   4,
+		ValueSize: 4,
 	}
 
 	// Create the map
@@ -101,7 +101,7 @@ func perfEventArrayMap() error {
 		log.Fatalf("failed to create perf event array map: %v", err)
 	}
 	perfMap = cgroupEventsMap
-	if err := outerMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
+	if err := perfMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
 		return err
 	}
 	return nil
@@ -166,56 +166,56 @@ func main() {
 	}
 	log.Infof("cgroupV2: %v", cgroupV2)
 
-	if cgroupV2 {
-		for _, cgroupPath := range updatedFiles {
-			// load the group which belongs to system.slice
-			cg, err := cgroup2.Load(cgroupPath)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			processIDList, err := cg.Procs(true)
-
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			for _, processID := range processIDList {
-				// get  inode number of the cgroup id
-				cgroupInodeNum, err := cgroup.GetCurrentCgroupID(uint64(processID))
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				processIDMaps[cgroupInodeNum] = append(processIDMaps[uint64(cgroupInodeNum)], processID)
-			}
-		}
-		log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
-
-		for cgroupInodeNum, _ := range processIDMaps {
-			// examine whether the process id exists in the processIDMaps
-			innerMapSpec := createInnerMapSpec(cgroupInodeNum)
-			innerMap, err := ebpf.NewMap(&innerMapSpec)
-			if err != nil {
-				log.Fatalf("inner_map: %v", err)
-			}
-
-			if err := outerMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
-				log.Fatalf("outerMap.Update: %v", err)
-			}
-
+	for _, cgroupPath := range updatedFiles {
+		// load the group which belongs to system.slice
+		cg, err := cgroup2.Load(cgroupPath)
+		if err != nil {
+			log.Fatal(err)
 		}
 
-		// Attach the tracepoint
-		tp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
-			Name:    "sys_enter", // corresponds to the raw tracepoint name in SEC
-			Program: objs.syscallPrograms.RawTracepointSysEnter,
-		})
+		processIDList, err := cg.Procs(true)
 
 		if err != nil {
-			log.Fatalf("attaching tracepoint: %v", err)
+			log.Fatal(err)
 		}
-		defer tp.Close()
+
+		for _, processID := range processIDList {
+			// get  inode number of the cgroup id
+			cgroupInodeNum, err := cgroup.GetCurrentCgroupID(uint64(processID))
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			processIDMaps[cgroupInodeNum] = append(processIDMaps[uint64(cgroupInodeNum)], processID)
+		}
+	}
+	log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
+
+	for cgroupInodeNum, _ := range processIDMaps {
+		// examine whether the process id exists in the processIDMaps
+		innerMapSpec := createInnerMapSpec(cgroupInodeNum)
+		innerMap, err := ebpf.NewMap(&innerMapSpec)
+		if err != nil {
+			log.Fatalf("inner_map: %v", err)
+		}
+
+		if err := outerMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
+			log.Fatalf("outerMap.Update: %v", err)
+		}
 
 	}
+
+	// Attach the tracepoint
+	tp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "sys_enter", // corresponds to the raw tracepoint name in SEC
+		Program: objs.syscallPrograms.RawTracepointSysEnter,
+	})
+
+	if err != nil {
+		log.Fatalf("attaching tracepoint: %v", err)
+	}
+	defer tp.Close()
+
+	perf.ReadMessageFromPerfBuffer("cgroup_events")
+
 }

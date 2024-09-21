@@ -7,6 +7,7 @@
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
 
+
 // try to load the ebpf map from /sys/fs/bpf/outer_map
 
 char __license[] SEC("license") = "Dual MIT/GPL"; 
@@ -41,12 +42,20 @@ int on_cgroup_create(__u64 *ctx) {
     u32 cgroup_id = (u32)ctx[0]; 
     
     bpf_probe_read_str(cgroup_path, sizeof(cgroup_path), path);
+    u32 cpu = bpf_get_smp_processor_id();
     
     // Copy the cgroup path from the event context
+    bpf_printk("cpu: %d\n", cpu);
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
         // TODO: create an entry in the outer map
-        bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
+        // bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
+        bpf_printk("ready to send cgroup id to perf event array\n");
+        
+        int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
+        if (ret == -2) {
+            bpf_printk("Error sending to perf event buffer: %d\n", ret);
+        }
         bpf_printk("send cgroup id to perf event array\n");
     }
 
