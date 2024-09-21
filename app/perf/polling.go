@@ -13,7 +13,7 @@ func ReadMessageFromPerfBuffer(perfName string) {
 		log.Fatalf("loading pinned map: %v", err)
 	}
 
-	reader, err := perf.NewReader(bpfMap, 4096)
+	reader, err := perf.NewReader(bpfMap, 8)
 	if err != nil {
 		log.Fatalf("creating perf buffer reader: %v", err)
 	}
@@ -23,10 +23,10 @@ func ReadMessageFromPerfBuffer(perfName string) {
 	for {
 		log.Printf("Reading from perf buffer\n")
 		sample, err := reader.Read()
-		log.Printf("Received sample: %+v\n", sample.RawSample)
 		if err != nil {
 			log.Fatalf("reading from perf buffer: %v", err)
 		}
+		log.Printf("Read from perf buffer: %v\n", sample)
 
 	}
 }

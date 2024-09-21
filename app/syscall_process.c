@@ -33,6 +33,10 @@ struct {
 	__uint(value_size, sizeof(u32));
 } cgroup_events SEC(".maps");
 
+typedef struct event {
+    u32 cgroup_id;
+} event;
+
 SEC("raw_tracepoint/cgroup_mkdir")
 int on_cgroup_create(__u64 *ctx) {
     char cgroup_path[128];
@@ -49,14 +53,17 @@ int on_cgroup_create(__u64 *ctx) {
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
         // TODO: create an entry in the outer map
-        // bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
         bpf_printk("ready to send cgroup id to perf event array\n");
+        struct event cgroup_event = {cgroup_id};
         
-        int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
+        int ret = bpf_perf_event_output(ctx, &cgroup_events, 0, &cgroup_event, sizeof(cgroup_event));
         if (ret == -2) {
             bpf_printk("Error sending to perf event buffer: %d\n", ret);
         }
-        bpf_printk("send cgroup id to perf event array\n");
+        else if(ret == 0){
+            bpf_printk("send cgroup id to perf event array\n");
+        }
+        
     }
 
     return 0;
