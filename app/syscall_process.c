@@ -27,11 +27,11 @@ struct {
 } outer_map SEC(".maps");
 
 
-struct {
-	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-	__uint(key_size, sizeof(u32));
-	__uint(value_size, sizeof(u32));
-} cgroup_events SEC(".maps");
+struct
+{
+  __uint (type, BPF_MAP_TYPE_RINGBUF);
+  __uint (max_entries, 4096);
+} cgroup_events SEC (".maps");
 
 SEC("raw_tracepoint/cgroup_mkdir")
 int on_cgroup_create(__u64 *ctx) {
@@ -48,14 +48,19 @@ int on_cgroup_create(__u64 *ctx) {
     bpf_printk("cpu: %d\n", cpu);
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
+          // Reserve the ring-buffer
+        u32* evt = bpf_ringbuf_reserve(&cgroup_events, sizeof(cgroup_id), 0);
+        if (!evt) {
+            return 0;
+        }
+        *evt = cgroup_id;
         // TODO: create an entry in the outer map
         // bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
         bpf_printk("ready to send cgroup id to perf event array\n");
         
-        int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
-        if (ret == -2) {
-            bpf_printk("Error sending to perf event buffer: %d\n", ret);
-        }
+        // int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_id, sizeof(cgroup_id));
+        bpf_ringbuf_submit(evt, 0);
+        
         bpf_printk("send cgroup id to perf event array\n");
     }
 

@@ -11,8 +11,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	// "strconv"
+	"docker_cgroup/bpfperf"
 	"docker_cgroup/cgroup"
-	"docker_cgroup/perf"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -22,7 +22,7 @@ import (
 )
 
 var outerMap *ebpf.Map
-var perfMap *ebpf.Map
+var ringBufMap *ebpf.Map
 
 // read the output "max user processes" from ulimit -a
 var maxMumProcessSizeInContainer int
@@ -88,25 +88,27 @@ func createOuterMap() error {
 	}
 	return nil
 }
-func perfEventArrayMap() error {
+func createRingBufMap() error {
+	// Define the ring buffer map spec
 	mapSpec := &ebpf.MapSpec{
-		Type:      ebpf.PerfEventArray,
-		KeySize:   4,
-		ValueSize: 4,
+		Type:       ebpf.RingBuf, // Equivalent to BPF_MAP_TYPE_RINGBUF
+		MaxEntries: 4096,         // Size in bytes (adjust size as necessary)
 	}
 
-	// Create the map
-	cgroupEventsMap, err := ebpf.NewMap(mapSpec)
+	// Create the ring buffer map
+	ringBuf, err := ebpf.NewMap(mapSpec)
 	if err != nil {
-		log.Fatalf("failed to create perf event array map: %v", err)
+		log.Fatalf("failed to create ring buffer map: %v", err)
 	}
-	perfMap = cgroupEventsMap
-	if err := perfMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
+	ringBufMap = ringBuf
+
+	// Pin the ring buffer map to the BPF filesystem
+	if err := ringBufMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
 		return err
 	}
+
 	return nil
 }
-
 func init() {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		log.Fatal(err)
@@ -120,7 +122,7 @@ func init() {
 			log.Fatalf("creating outer map: %v", err)
 		}
 	}
-	if err := perfEventArrayMap(); err != nil {
+	if err := createRingBufMap(); err != nil {
 		if _, ok := err.(*os.PathError); !ok {
 			log.Info("perf event array map already exists")
 		} else {
@@ -216,6 +218,6 @@ func main() {
 	}
 	defer tp.Close()
 
-	perf.ReadMessageFromPerfBuffer("cgroup_events")
+	bpfperf.ReadMessageFromRingBuffer("cgroup_events")
 
 }
