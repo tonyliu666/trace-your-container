@@ -2,7 +2,7 @@
 // #include <linux/bpf.h>
 // #include <linux/types.h>
 # include "common.h"
-#include <bpf_helpers.h>
+#include <bpf/bpf_helpers.h>
   // For task_struct and process-related functions
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
@@ -27,15 +27,16 @@ struct {
 } outer_map SEC(".maps");
 
 
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__uint(key_size, sizeof(u32));
 	__uint(value_size, sizeof(u32));
 } cgroup_events SEC(".maps");
 
-typedef struct event {
-    u32 cgroup_id;
-} event;
+struct event {
+    u32 cgroupID; 
+};
 
 SEC("raw_tracepoint/cgroup_mkdir")
 int on_cgroup_create(__u64 *ctx) {
@@ -56,7 +57,7 @@ int on_cgroup_create(__u64 *ctx) {
         bpf_printk("ready to send cgroup id to perf event array\n");
         struct event cgroup_event = {cgroup_id};
         
-        int ret = bpf_perf_event_output(ctx, &cgroup_events, 0, &cgroup_event, sizeof(cgroup_event));
+        int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_event, sizeof(cgroup_event));
         if (ret == -2) {
             bpf_printk("Error sending to perf event buffer: %d\n", ret);
         }
@@ -102,3 +103,4 @@ int raw_tracepoint__sys_enter(__u64 *ctx) {
     
 	return 0;
 }
+

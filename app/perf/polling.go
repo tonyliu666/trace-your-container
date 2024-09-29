@@ -1,32 +1,35 @@
 package perf
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/perf"
 )
 
 func ReadMessageFromPerfBuffer(perfName string) {
-	bpfMap, err := ebpf.LoadPinnedMap("/sys/fs/bpf/"+perfName, nil)
+	spec, err := ebpf.LoadCollectionSpec("syscall_bpfel.o")
 	if err != nil {
-		log.Fatalf("loading pinned map: %v", err)
+		log.Fatalf("loading collection spec: %v", err)
 	}
 
-	reader, err := perf.NewReader(bpfMap, 8)
+	coll, err := ebpf.NewCollection(spec)
 	if err != nil {
-		log.Fatalf("creating perf buffer reader: %v", err)
+		log.Fatalf("creating collection: %v", err)
 	}
-	defer reader.Close()
-	// read the data from the perf buffer
-
+	events, err := perf.NewReader(coll.Maps["cgroup_events"], os.Getpagesize())
+	if err != nil {
+		panic(err)
+	}
+	defer events.Close()
 	for {
-		log.Printf("Reading from perf buffer\n")
-		sample, err := reader.Read()
+		record, err := events.Read()
 		if err != nil {
-			log.Fatalf("reading from perf buffer: %v", err)
+			panic(err)
 		}
-		log.Printf("Read from perf buffer: %v\n", sample)
+		fmt.Println("Event: ", record)
 
 	}
 }
