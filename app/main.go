@@ -110,26 +110,24 @@ func createTracePointMap() error {
 		if err != nil {
 			panic(err)
 		}
-		// create sys enter tracepoint
 		coll, err := ebpf.NewCollection(spec)
 		if err != nil {
 			log.Errorf("collection error: %v", err)
 		}
 		util.EbpfCollection = coll
 	}
-
-	prog := util.EbpfCollection.Programs["raw_tracepoint__sys_enter"]
+	// create sysenter open tracepoint
+	prog := util.EbpfCollection.Programs["tracepoint__syscalls__sys_enter_open"]
 	if prog == nil {
 		log.Fatalf("program not found: %v", "tracepoint__syscalls__sys_enter")
 	}
-	tp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
-		Name:    "sys_enter",
-		Program: prog,
-	})
+	tp, err := link.Tracepoint("syscalls", "sys_enter_open", prog, nil)
+
 	if err != nil {
 		log.Fatalf("raw tracepoint error: %v", err)
 	}
 	util.TracepointMaps["sys_enter"] = tp
+
 	// create cgroup_mkdir tracepoint
 	prog = util.EbpfCollection.Programs["on_cgroup_create"]
 	if prog == nil {
@@ -143,6 +141,17 @@ func createTracePointMap() error {
 		log.Fatalf("raw tracepoint error: %v", err)
 	}
 	util.TracepointMaps["cgroup_mkdir"] = tp
+
+	// unlinkAt:
+	prog = util.EbpfCollection.Programs["unlinkAt"]
+	if prog == nil {
+		log.Fatalf("program not found: %v", "tracepoint__syscalls__sys_enter")
+	}
+	kprobe, err := link.Kprobe("do_unlinkat", prog, nil)
+	if err != nil {
+		log.Fatalf("sys open error: %v", err)
+	}
+	util.TracepointMaps["do_unlinkat"] = kprobe
 	return nil
 }
 
@@ -224,7 +233,6 @@ func main() {
 			util.ProcessIDMaps[cgroupInodeNum] = append(util.ProcessIDMaps[uint64(cgroupInodeNum)], processID)
 		}
 	}
-	log.Infof("processIDMaps: %v, length: %d", util.ProcessIDMaps, len(util.ProcessIDMaps))
 
 	for cgroupInodeNum, _ := range util.ProcessIDMaps {
 		// examine whether the process id exists in the processIDMaps
@@ -233,8 +241,19 @@ func main() {
 		if err != nil {
 			log.Fatalf("inner_map: %v", err)
 		}
+		log.Println("cgroupInodeNum: ", cgroupInodeNum)
+		// Populate the inner map with some key-value pairs
+		// Example: Insert key 0 with value 12345, adjust logic based on your data
+		key := uint32(0)       // Example key
+		value := uint32(12345) // Example value, replace with your actual value logic
 
-		if err := util.OuterMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
+		err = innerMap.Update(&key, &value, ebpf.UpdateAny)
+		if err != nil {
+			log.Fatalf("Failed to update inner map for cgroupInodeNum %d: %v", cgroupInodeNum, err)
+		}
+
+		// if err := util.OuterMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
+		if err := util.OuterMap.Update(uint32(cgroupInodeNum), uint32(innerMap.FD()), ebpf.UpdateAny); err != nil {
 			log.Fatalf("outerMap.Update: %v", err)
 		}
 

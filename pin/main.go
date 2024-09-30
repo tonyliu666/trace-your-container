@@ -50,7 +50,7 @@ func getCurrentCgroupID(pid uint64) (uint64, error) {
 }
 
 func main() {
-	cgroupID, err := getCurrentCgroupID(uint64(34609))
+	cgroupID, err := getCurrentCgroupID(uint64(1731))
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

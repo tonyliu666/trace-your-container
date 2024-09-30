@@ -4,6 +4,7 @@
 # include "common.h"
 #include <bpf/bpf_helpers.h>
   // For task_struct and process-related functions
+#include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
 
@@ -26,8 +27,6 @@ struct {
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
 
-
-
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__uint(key_size, sizeof(u32));
@@ -47,14 +46,11 @@ int on_cgroup_create(__u64 *ctx) {
     u32 cgroup_id = (u32)ctx[0]; 
     
     bpf_probe_read_str(cgroup_path, sizeof(cgroup_path), path);
-    u32 cpu = bpf_get_smp_processor_id();
-    
-    // Copy the cgroup path from the event context
-    bpf_printk("cpu: %d\n", cpu);
+    // u32 cpu = bpf_get_smp_processor_id();
+    // bpf_printk("cpu: %d\n", cpu);
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
         // TODO: create an entry in the outer map
-        bpf_printk("ready to send cgroup id to perf event array\n");
         struct event cgroup_event = {cgroup_id};
         
         int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_event, sizeof(cgroup_event));
@@ -71,26 +67,37 @@ int on_cgroup_create(__u64 *ctx) {
 }
 
 // SEC("tp_btf/sys_enter")
-SEC("raw_tracepoint/sys_enter")
-int raw_tracepoint__sys_enter(__u64 *ctx) {
+SEC("tracepoint/syscalls/sys_enter_open")
+int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     u32 key;
     u32 pid = (u32)bpf_get_current_pid_tgid();
-    u32 syscallID = (u32)ctx[1];
+    unsigned long syscall_id = ctx->args[1];
 
     // Check if the process is in a Docker container
-    // struct task_struct *task = (struct task_struct *)bpf_get_current_task();
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
-    void *inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
+    
+    u32 *inner_map = (u32 *)bpf_map_lookup_elem(&outer_map, &cgroupId);
+
+    char filename[128];
+    
+    // Read the first argument to the open syscall, which is the filename
+    bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
+    
+    // Print the filename being opened
+    bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
 
     if (inner_map == NULL) {
+        if (cgroupId == (u32)13770) {
+            bpf_printk("Process %d is in cgroup %d\n", pid, cgroupId);
+        }
        return 0;
     }
 
    else{
-        bpf_printk("syscallID_key: %ld\n", syscallID);
-        bpf_printk("cgroupID: %d\n", cgroupId);
+        bpf_printk("syscallID_key: %ld\n", syscall_id);
+        
         // insert the syscallID into the inner map and the count of the syscallID
-        u32 syscallID_key = syscallID;
+        u32 syscallID_key = syscall_id;
         
         u32 *count = bpf_map_lookup_elem(inner_map, &syscallID_key);
         if (count == NULL) {
@@ -105,3 +112,14 @@ int raw_tracepoint__sys_enter(__u64 *ctx) {
 	return 0;
 }
 
+SEC("kprobe/do_unlinkat")
+int unlinkAt(struct pt_regs *ctx) {
+    pid_t pid = bpf_get_current_pid_tgid() >> 32;
+    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    if (cgroupId == (u32)14890) {
+        bpf_printk("unlinkat syscall from process %d in cgroup %d\n", pid, cgroupId);
+    }
+    // bpf_printk("unlinkat syscall from process %d in cgroup %d\n", pid, cgroupId);
+    return 0;
+}
+ 
