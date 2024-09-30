@@ -1,10 +1,18 @@
 package main
 
 import (
+	"docker_cgroup/cgroup"
+	"docker_cgroup/perf"
+	"docker_cgroup/util"
+	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/containerd/cgroups"
+	cgroup2 "github.com/containerd/cgroups/v3/cgroup2"
 
 	log "github.com/sirupsen/logrus"
 
@@ -18,12 +26,6 @@ import (
 const (
 	objFileName = "./syscall_process.o"
 )
-
-var outerMap *ebpf.Map
-var perfMap *ebpf.Map
-
-// read the output "max user processes" from ulimit -a
-var maxMumProcessSizeInContainer int
 
 func getSystemMaxProcessNumber() (int, error) {
 	cmd := exec.Command("bash", "-c", "ulimit -a")
@@ -48,10 +50,10 @@ func createInnerMapSpec(pid uint64) ebpf.MapSpec {
 
 	innerMapSpec := ebpf.MapSpec{
 		Name:       "inner_map" + fill_portion,
-		Type:       ebpf.Hash,                            // Type changed to Array to match BPF_MAP_TYPE_ARRAY
-		KeySize:    4,                                    // Size of keys in the inner map (uint32_t)
-		ValueSize:  4,                                    // Size of values in the inner map (uint32_t)
-		MaxEntries: uint32(maxMumProcessSizeInContainer), // Maximum number of entries in the inner map
+		Type:       ebpf.Hash,                                 // Type changed to Array to match BPF_MAP_TYPE_ARRAY
+		KeySize:    4,                                         // Size of keys in the inner map (uint32_t)
+		ValueSize:  4,                                         // Size of values in the inner map (uint32_t)
+		MaxEntries: uint32(util.MaxMumProcessSizeInContainer), // Maximum number of entries in the inner map
 	}
 	return innerMapSpec
 }
@@ -75,10 +77,10 @@ func createOuterMap() error {
 	if err != nil {
 		return err
 	}
-	outerMap = outer_map
+	util.OuterMap = outer_map
 
 	// Pin the outer map
-	if err := outerMap.Pin("/sys/fs/bpf/outer_map"); err != nil {
+	if err := util.OuterMap.Pin("/sys/fs/bpf/outer_map"); err != nil {
 		return err
 	}
 	return nil
@@ -95,10 +97,52 @@ func perfEventArrayMap() error {
 	if err != nil {
 		log.Fatalf("failed to create perf event array map: %v", err)
 	}
-	perfMap = cgroupEventsMap
-	if err := perfMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
+	util.PerfMap = cgroupEventsMap
+	if err := util.PerfMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
 		return err
 	}
+	return nil
+}
+
+func createTracePointMap() error {
+	if util.EbpfCollection == nil {
+		spec, err := ebpf.LoadCollectionSpec(objFileName)
+		if err != nil {
+			panic(err)
+		}
+		// create sys enter tracepoint
+		coll, err := ebpf.NewCollection(spec)
+		if err != nil {
+			log.Errorf("collection error: %v", err)
+		}
+		util.EbpfCollection = coll
+	}
+
+	prog := util.EbpfCollection.Programs["raw_tracepoint__sys_enter"]
+	if prog == nil {
+		log.Fatalf("program not found: %v", "tracepoint__syscalls__sys_enter")
+	}
+	tp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "sys_enter",
+		Program: prog,
+	})
+	if err != nil {
+		log.Fatalf("raw tracepoint error: %v", err)
+	}
+	util.TracepointMaps["sys_enter"] = tp
+	// create cgroup_mkdir tracepoint
+	prog = util.EbpfCollection.Programs["on_cgroup_create"]
+	if prog == nil {
+		log.Fatalf("program not found: %v", "tracepoint__cgroup__cgroup_mkdir")
+	}
+	tp, err = link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "cgroup_mkdir",
+		Program: prog,
+	})
+	if err != nil {
+		log.Fatalf("raw tracepoint error: %v", err)
+	}
+	util.TracepointMaps["cgroup_mkdir"] = tp
 	return nil
 }
 
@@ -107,7 +151,7 @@ func init() {
 		log.Fatal(err)
 	}
 	// set the maxium number of processes can run in one single container
-	maxMumProcessSizeInContainer, _ = getSystemMaxProcessNumber()
+	util.MaxMumProcessSizeInContainer, _ = getSystemMaxProcessNumber()
 	if err := createOuterMap(); err != nil {
 		if _, ok := err.(*os.PathError); !ok {
 			log.Info("outer map already exists")
@@ -125,104 +169,77 @@ func init() {
 
 }
 
-// create process id maps, value  is the list of uint64
-var processIDMaps = make(map[uint64][]uint64)
-
 func main() {
-	// pin the syscall_bpfeb.o to /sys/fs/bpf/syscall_bpfeb
-	spec, err := ebpf.LoadCollectionSpec(objFileName)
+	if err := createTracePointMap(); err != nil {
+		log.Fatalf("create tracepoint map: %v", err)
+	}
+	// for each value in tracepointMaps, defer the close
+	for _, tp := range util.TracepointMaps {
+		defer tp.Close()
+	}
+
+	dirPath := "/sys/fs/cgroup/system.slice"
+
+	files, err := filepath.Glob(filepath.Join(dirPath, "docker-*.scope"))
 	if err != nil {
-		panic(err)
+		fmt.Printf("Error reading directory: %v\n", err)
+		return
 	}
 
-	coll, err := ebpf.NewCollection(spec)
-	if err != nil {
-		log.Error("collection error: %v", err)
-	}
-	prog := coll.Programs["tracepoint__syscalls__sys_enter"]
-	if prog == nil {
-		log.Fatalf("program not found: %v", "tracepoint__syscalls__sys_enter")
-	}
-	tp, err := link.Tracepoint("syscalls", "sys_enter", prog, nil)
-	if err != nil {
-		log.Fatalf("tracepoint error: %v", err)
+	// Remove the "/sys/fs/cgroup" prefix from each file path
+	var updatedFiles []string
+	prefixToRemove := "/sys/fs/cgroup"
+	for _, file := range files {
+		updatedFile := strings.TrimPrefix(file, prefixToRemove)
+		updatedFiles = append(updatedFiles, updatedFile)
 	}
 
-	defer tp.Close()
+	var cgroupV2 bool
 
-	// dirPath := "/sys/fs/cgroup/system.slice"
+	if cgroups.Mode() == cgroups.Unified {
+		cgroupV2 = true
+	}
+	log.Infof("cgroupV2: %v", cgroupV2)
 
-	// files, err := filepath.Glob(filepath.Join(dirPath, "docker-*.scope"))
-	// if err != nil {
-	// 	fmt.Printf("Error reading directory: %v\n", err)
-	// 	return
-	// }
+	for _, cgroupPath := range updatedFiles {
+		// load the group which belongs to system.slice
+		cg, err := cgroup2.Load(cgroupPath)
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	// // Remove the "/sys/fs/cgroup" prefix from each file path
-	// var updatedFiles []string
-	// prefixToRemove := "/sys/fs/cgroup"
-	// for _, file := range files {
-	// 	updatedFile := strings.TrimPrefix(file, prefixToRemove)
-	// 	updatedFiles = append(updatedFiles, updatedFile)
-	// }
+		processIDList, err := cg.Procs(true)
 
-	// var cgroupV2 bool
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	// if cgroups.Mode() == cgroups.Unified {
-	// 	cgroupV2 = true
-	// }
-	// log.Infof("cgroupV2: %v", cgroupV2)
+		for _, processID := range processIDList {
+			// get  inode number of the cgroup id
+			cgroupInodeNum, err := cgroup.GetCurrentCgroupID(uint64(processID))
+			if err != nil {
+				log.Fatal(err)
+			}
 
-	// for _, cgroupPath := range updatedFiles {
-	// 	// load the group which belongs to system.slice
-	// 	cg, err := cgroup2.Load(cgroupPath)
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
+			util.ProcessIDMaps[cgroupInodeNum] = append(util.ProcessIDMaps[uint64(cgroupInodeNum)], processID)
+		}
+	}
+	log.Infof("processIDMaps: %v, length: %d", util.ProcessIDMaps, len(util.ProcessIDMaps))
 
-	// 	processIDList, err := cg.Procs(true)
+	for cgroupInodeNum, _ := range util.ProcessIDMaps {
+		// examine whether the process id exists in the processIDMaps
+		innerMapSpec := createInnerMapSpec(cgroupInodeNum)
+		innerMap, err := ebpf.NewMap(&innerMapSpec)
+		if err != nil {
+			log.Fatalf("inner_map: %v", err)
+		}
 
-	// 	if err != nil {
-	// 		log.Fatal(err)
-	// 	}
+		if err := util.OuterMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
+			log.Fatalf("outerMap.Update: %v", err)
+		}
 
-	// 	for _, processID := range processIDList {
-	// 		// get  inode number of the cgroup id
-	// 		cgroupInodeNum, err := cgroup.GetCurrentCgroupID(uint64(processID))
-	// 		if err != nil {
-	// 			log.Fatal(err)
-	// 		}
+	}
 
-	// 		processIDMaps[cgroupInodeNum] = append(processIDMaps[uint64(cgroupInodeNum)], processID)
-	// 	}
-	// }
-	// log.Infof("processIDMaps: %v, length: %d", processIDMaps, len(processIDMaps))
-
-	// for cgroupInodeNum, _ := range processIDMaps {
-	// 	// examine whether the process id exists in the processIDMaps
-	// 	innerMapSpec := createInnerMapSpec(cgroupInodeNum)
-	// 	innerMap, err := ebpf.NewMap(&innerMapSpec)
-	// 	if err != nil {
-	// 		log.Fatalf("inner_map: %v", err)
-	// 	}
-
-	// 	if err := outerMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
-	// 		log.Fatalf("outerMap.Update: %v", err)
-	// 	}
-
-	// }
-
-	// // Attach the tracepoint
-	// tp, err := link.AttachRawTracepoint(link.RawTracepointOptions{
-	// 	Name:    "sys_enter", // corresponds to the raw tracepoint name in SEC
-	// 	Program: objs.syscallPrograms.RawTracepointSysEnter,
-	// })
-
-	// if err != nil {
-	// 	log.Fatalf("attaching tracepoint: %v", err)
-	// }
-	// defer tp.Close()
-
-	// perf.ReadMessageFromPerfBuffer("cgroup_events")
+	perf.ReadMessageFromPerfBuffer("cgroup_events")
 
 }

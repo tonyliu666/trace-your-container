@@ -88,6 +88,7 @@ int raw_tracepoint__sys_enter(__u64 *ctx) {
 
    else{
         bpf_printk("syscallID_key: %ld\n", syscallID);
+        bpf_printk("cgroupID: %d\n", cgroupId);
         // insert the syscallID into the inner map and the count of the syscallID
         u32 syscallID_key = syscallID;
         
