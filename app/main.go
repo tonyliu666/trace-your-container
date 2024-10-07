@@ -241,9 +241,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("inner_map: %v", err)
 		}
-		log.Println("cgroupInodeNum: ", cgroupInodeNum)
-		// Populate the inner map with some key-value pairs
-		// Example: Insert key 0 with value 12345, adjust logic based on your data
+
+		// log.Println("Binary:", fmt.Sprintf("%064b", cgroupInodeNum))
+		// log.Println("Binary:", fmt.Sprintf("%032b", uint32(cgroupInodeNum)))
+		log.Println("cgroupInodeNum:", cgroupInodeNum)
+
 		key := uint32(0)       // Example key
 		value := uint32(12345) // Example value, replace with your actual value logic
 
@@ -251,9 +253,12 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to update inner map for cgroupInodeNum %d: %v", cgroupInodeNum, err)
 		}
+		// key_ptr := unsafe.Pointer(&cgroupInodeNum)
+		//InodeNum := uint32(cgroupInodeNum)
+		maps := util.EbpfCollection.Maps["outer_map"]
 
 		// if err := util.OuterMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
-		if err := util.OuterMap.Update(uint32(cgroupInodeNum), uint32(innerMap.FD()), ebpf.UpdateAny); err != nil {
+		if err := maps.Update(uint32(cgroupInodeNum), uint32(innerMap.FD()), ebpf.UpdateAny); err != nil {
 			log.Fatalf("outerMap.Update: %v", err)
 		}
 

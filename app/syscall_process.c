@@ -26,6 +26,23 @@ struct {
 	__uint(max_entries, 1024); 
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
+// struct {
+//     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);  // Outer map type
+//     __type(key, u32);       // Key size of the outer map
+// 	__type(value, struct inner_map);
+//     __uint(max_entries, 1024); 
+// } outer_map SEC(".maps");
+
+
+// struct {
+//     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);  // Outer map type
+//     __type(key, u32);  
+//     __type(value,u32);                 
+//     // Key size of the outer map (u32 == uint32 in Go)
+//     __uint(max_entries, 1024);                // Maximum number of entries
+//     __uint(pinning, LIBBPF_PIN_BY_NAME);      // Ensure it's pinned with a name if needed
+//     __array(values, struct inner_map);        // Inner map definition
+// } outer_map SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -75,8 +92,8 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
 
     // Check if the process is in a Docker container
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
-    
-    u32 *inner_map = (u32 *)bpf_map_lookup_elem(&outer_map, &cgroupId);
+    // TODO: cannot find the inner map
+    struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
 
     char filename[128];
     
@@ -86,8 +103,8 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     // Print the filename being opened
     bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
 
-    if (inner_map == NULL) {
-        if (cgroupId == (u32)13770) {
+    if (!inner_map) {
+        if (cgroupId == (u32)8974) {
             bpf_printk("Process %d is in cgroup %d\n", pid, cgroupId);
         }
        return 0;
