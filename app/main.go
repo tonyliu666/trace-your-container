@@ -242,8 +242,6 @@ func main() {
 			log.Fatalf("inner_map: %v", err)
 		}
 
-		// log.Println("Binary:", fmt.Sprintf("%064b", cgroupInodeNum))
-		// log.Println("Binary:", fmt.Sprintf("%032b", uint32(cgroupInodeNum)))
 		log.Println("cgroupInodeNum:", cgroupInodeNum)
 
 		key := uint32(0)       // Example key

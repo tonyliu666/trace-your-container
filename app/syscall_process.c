@@ -88,7 +88,7 @@ SEC("tracepoint/syscalls/sys_enter_open")
 int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     u32 key;
     u32 pid = (u32)bpf_get_current_pid_tgid();
-    unsigned long syscall_id = ctx->args[1];
+    unsigned long syscall_id = ctx->id;
 
     // Check if the process is in a Docker container
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
@@ -104,9 +104,6 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
 
     if (!inner_map) {
-        if (cgroupId == (u32)8974) {
-            bpf_printk("Process %d is in cgroup %d\n", pid, cgroupId);
-        }
        return 0;
     }
 
