@@ -267,8 +267,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to update inner map for cgroupInodeNum %d: %v", cgroupInodeNum, err)
 		}
-		// key_ptr := unsafe.Pointer(&cgroupInodeNum)
-		//InodeNum := uint32(cgroupInodeNum)
+
 		maps := util.EbpfCollection.Maps["outer_map"]
 
 		// if err := util.OuterMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {

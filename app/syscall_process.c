@@ -69,7 +69,6 @@ SEC("tracepoint/syscalls/sys_enter_open")
 int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     u32 key;
     u32 pid = (u32)bpf_get_current_pid_tgid();
-    long int syscall_id = ctx->id;
 
     // Check if the process is in a Docker container
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
@@ -81,18 +80,13 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     // Read the first argument to the open syscall, which is the filename
     bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
     
-    // Print the filename being opened
-    bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
-
     if (!inner_map) {
        return 0;
     }
 
    else{
-        bpf_printk("syscallID_key: %ld\n", syscall_id);
-        // insert the syscallID into the inner map and the count of the syscallID
-        u32 syscallID_key = syscall_id;
-        
+        bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
+        u32 syscallID_key = 2;
         u32 *count = bpf_map_lookup_elem(inner_map, &syscallID_key);
         if (count == NULL) {
             u32 count = 1;
@@ -102,7 +96,6 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
         }
         
     }
-    
 	return 0;
 }
 SEC("tp_btf/sys_enter")
@@ -111,6 +104,9 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     u32 key;
     u32 pid = (u32)bpf_get_current_pid_tgid();
     long int syscall_id = ctx->id;
+    if (syscall_id == 2){
+        return 0;
+    }
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
     if (!inner_map) {
