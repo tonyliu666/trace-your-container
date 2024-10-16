@@ -16,13 +16,15 @@ type Event struct {
 
 func ReadMessageFromPerfBuffer(perfName string) {
 	var event Event
-	events, err := perf.NewReader(util.EbpfCollection.Maps[perfName], os.Getpagesize())
+	reader, err := perf.NewReader(util.EbpfCollection.Maps[perfName], os.Getpagesize())
 	if err != nil {
 		panic(err)
 	}
-	defer events.Close()
+	defer reader.Close()
+
 	for {
-		record, err := events.Read()
+
+		record, err := reader.Read()
 		if err != nil {
 			panic(err)
 		}
