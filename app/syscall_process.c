@@ -108,7 +108,28 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
 SEC("tp_btf/sys_enter")
 int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     // Access system call arguments or system call ID using `id` or `regs`
-    bpf_printk("System call ID: %ld\n", ctx->id);
+    u32 key;
+    u32 pid = (u32)bpf_get_current_pid_tgid();
+    long int syscall_id = ctx->id;
+    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
+    if (!inner_map) {
+       return 0;
+    }
+    else{
+        bpf_printk("process %d in cgroup %d call system call id %ld\n", pid, cgroupId, syscall_id);
+        // insert the syscallID into the inner map and the count of the syscallID
+        u32 syscallID_key = (u32)syscall_id;
+        
+        u32 *count = bpf_map_lookup_elem(inner_map, &syscallID_key);
+        if (count == NULL) {
+            u32 count = 1;
+            bpf_map_update_elem(inner_map, &syscallID_key, &count, BPF_ANY);
+        } else {
+            (*count)++;
+        }
+        
+    }
     
     return 0;
 }
