@@ -2,6 +2,7 @@ package perf
 
 import (
 	"bytes"
+	"docker_cgroup/cgroup"
 	"docker_cgroup/util"
 	"encoding/binary"
 	"fmt"
@@ -34,6 +35,10 @@ func ReadMessageFromPerfBuffer(perfName string) {
 			continue
 		}
 		fmt.Printf("Event - CgroupID: %d\n", event.CgroupID)
-
+		err = cgroup.InsertEntryToInnerMap(event.CgroupID)
+		if err != nil {
+			fmt.Printf("Error inserting entry to inner map: %v\n", err)
+		}
+		fmt.Println("Inserted inner map to the entry of outer map")
 	}
 }

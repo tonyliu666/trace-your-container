@@ -42,21 +42,6 @@ func getSystemMaxProcessNumber() (int, error) {
 	return maxProcessNum, nil
 
 }
-func createInnerMapSpec(pid uint64) ebpf.MapSpec {
-	fill_portion := ""
-	if pid != 0 {
-		fill_portion = strconv.Itoa(int(pid))
-	}
-
-	innerMapSpec := ebpf.MapSpec{
-		Name:       "inner_map" + fill_portion,
-		Type:       ebpf.Hash,                                 // Type changed to Array to match BPF_MAP_TYPE_ARRAY
-		KeySize:    4,                                         // Size of keys in the inner map (uint32_t)
-		ValueSize:  4,                                         // Size of values in the inner map (uint32_t)
-		MaxEntries: uint32(util.MaxMumProcessSizeInContainer), // Maximum number of entries in the inner map
-	}
-	return innerMapSpec
-}
 
 func createOuterMap() error {
 	/// Create the outer map spec for Hash of Maps
@@ -68,7 +53,7 @@ func createOuterMap() error {
 		MaxEntries: 1024,            // Maximum number of entries (keys) in the outer map
 	}
 	// Create the inner map spec for Array type
-	innerMapSpec := createInnerMapSpec(uint64(0))
+	innerMapSpec := cgroup.CreateInnerMapSpec(uint64(0))
 
 	outerMapSpec.InnerMap = &innerMapSpec
 
@@ -252,21 +237,13 @@ func main() {
 
 	for cgroupInodeNum, _ := range util.ProcessIDMaps {
 		// examine whether the process id exists in the processIDMaps
-		innerMapSpec := createInnerMapSpec(cgroupInodeNum)
+		innerMapSpec := cgroup.CreateInnerMapSpec(cgroupInodeNum)
 		innerMap, err := ebpf.NewMap(&innerMapSpec)
 		if err != nil {
 			log.Fatalf("inner_map: %v", err)
 		}
 
 		log.Println("cgroupInodeNum:", cgroupInodeNum)
-
-		key := uint32(0)       // Example key
-		value := uint32(12345) // Example value, replace with your actual value logic
-
-		err = innerMap.Update(&key, &value, ebpf.UpdateAny)
-		if err != nil {
-			log.Fatalf("Failed to update inner map for cgroupInodeNum %d: %v", cgroupInodeNum, err)
-		}
 
 		maps := util.EbpfCollection.Maps["outer_map"]
 
