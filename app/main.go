@@ -145,14 +145,30 @@ func createTracePointMap() error {
 	// unlinkAt:
 	prog = util.EbpfCollection.Programs["unlinkAt"]
 	if prog == nil {
-		log.Fatalf("program not found: %v", "tracepoint__syscalls__sys_enter")
+		log.Fatalf("program not found: %v", "unlinkAt")
 	}
 	kprobe, err := link.Kprobe("do_unlinkat", prog, nil)
 	if err != nil {
 		log.Fatalf("sys open error: %v", err)
 	}
 	util.TracepointMaps["do_unlinkat"] = kprobe
+
+	// tp_btf/sys_enter
+	prog = util.EbpfCollection.Programs["sysEnter"]
+	if prog == nil {
+		log.Fatalf("program not found: %v", "sysEnter")
+	}
+	tp, err = link.AttachTracing(link.TracingOptions{
+		Program:    prog,
+		AttachType: ebpf.AttachTraceRawTp,
+	})
+	if err != nil {
+		log.Fatalf("raw tracepoint error: %v", err)
+	}
+	util.TracepointMaps["sys_enter"] = tp
+
 	return nil
+
 }
 
 func init() {

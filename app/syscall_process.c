@@ -26,23 +26,6 @@ struct {
 	__uint(max_entries, 1024); 
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
-// struct {
-//     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);  // Outer map type
-//     __type(key, u32);       // Key size of the outer map
-// 	__type(value, struct inner_map);
-//     __uint(max_entries, 1024); 
-// } outer_map SEC(".maps");
-
-
-// struct {
-//     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);  // Outer map type
-//     __type(key, u32);  
-//     __type(value,u32);                 
-//     // Key size of the outer map (u32 == uint32 in Go)
-//     __uint(max_entries, 1024);                // Maximum number of entries
-//     __uint(pinning, LIBBPF_PIN_BY_NAME);      // Ensure it's pinned with a name if needed
-//     __array(values, struct inner_map);        // Inner map definition
-// } outer_map SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -63,8 +46,6 @@ int on_cgroup_create(__u64 *ctx) {
     u32 cgroup_id = (u32)ctx[0]; 
     
     bpf_probe_read_str(cgroup_path, sizeof(cgroup_path), path);
-    // u32 cpu = bpf_get_smp_processor_id();
-    // bpf_printk("cpu: %d\n", cpu);
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
         // TODO: create an entry in the outer map
@@ -88,7 +69,7 @@ SEC("tracepoint/syscalls/sys_enter_open")
 int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     u32 key;
     u32 pid = (u32)bpf_get_current_pid_tgid();
-    unsigned long syscall_id = ctx->id;
+    long int syscall_id = ctx->id;
 
     // Check if the process is in a Docker container
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
@@ -109,7 +90,6 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
 
    else{
         bpf_printk("syscallID_key: %ld\n", syscall_id);
-        
         // insert the syscallID into the inner map and the count of the syscallID
         u32 syscallID_key = syscall_id;
         
@@ -125,6 +105,14 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     
 	return 0;
 }
+SEC("tp_btf/sys_enter")
+int sysEnter(struct trace_event_raw_sys_enter *ctx) {
+    // Access system call arguments or system call ID using `id` or `regs`
+    bpf_printk("System call ID: %ld\n", ctx->id);
+    
+    return 0;
+}
+
 
 SEC("kprobe/do_unlinkat")
 int unlinkAt(struct pt_regs *ctx) {
