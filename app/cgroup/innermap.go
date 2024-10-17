@@ -16,8 +16,6 @@ func InsertEntryToInnerMap(cgroupInodeNum uint32) error {
 		return err
 	}
 
-	log.Println("cgroupInodeNum:", cgroupInodeNum)
-
 	maps := util.EbpfCollection.Maps["outer_map"]
 
 	// if err := util.OuterMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {

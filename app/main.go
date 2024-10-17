@@ -254,6 +254,6 @@ func main() {
 
 	}
 
-	perf.ReadMessageFromPerfBuffer("cgroup_events")
+	perf.MessagePerfBufferCreateInnerMap("cgroup_events")
 
 }

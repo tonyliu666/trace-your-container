@@ -15,7 +15,7 @@ type Event struct {
 	CgroupID uint32
 }
 
-func ReadMessageFromPerfBuffer(perfName string) {
+func MessagePerfBufferCreateInnerMap(perfName string) {
 	var event Event
 	reader, err := perf.NewReader(util.EbpfCollection.Maps[perfName], os.Getpagesize())
 	if err != nil {
@@ -24,7 +24,6 @@ func ReadMessageFromPerfBuffer(perfName string) {
 	defer reader.Close()
 
 	for {
-
 		record, err := reader.Read()
 		if err != nil {
 			panic(err)
@@ -39,6 +38,6 @@ func ReadMessageFromPerfBuffer(perfName string) {
 		if err != nil {
 			fmt.Printf("Error inserting entry to inner map: %v\n", err)
 		}
-		fmt.Println("Inserted inner map to the entry of outer map")
+		fmt.Printf("Inserted inner map %d to the entry of outer map\n", event.CgroupID)
 	}
 }

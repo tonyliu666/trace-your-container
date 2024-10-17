@@ -1,6 +1,7 @@
 //go:build ignore
 // #include <linux/bpf.h>
 // #include <linux/types.h>
+#define __TARGET_ARCH_x86
 # include "common.h"
 #include <bpf/bpf_helpers.h>
   // For task_struct and process-related functions
@@ -139,12 +140,25 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
 
 SEC("kprobe/do_unlinkat")
 int unlinkAt(struct pt_regs *ctx) {
-    pid_t pid = bpf_get_current_pid_tgid() >> 32;
-    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
-    if (cgroupId == (u32)14890) {
-        bpf_printk("unlinkat syscall from process %d in cgroup %d\n", pid, cgroupId);
-    }
-    // bpf_printk("unlinkat syscall from process %d in cgroup %d\n", pid, cgroupId);
+    pid_t pid;
+    const char *filename;
+    struct file *file;
+    file = (struct file *) PT_REGS_PARM1(ctx);
+    pid = bpf_get_current_pid_tgid() >> 32;
+    // get the filename
+    filename = file->file
+    
     return 0;
 }
+// SEC("fentry/do_unlinkat")
+// int unlinkAt(struct pt_regs *ctx) {
+//     pid_t pid;
+//     const char *filename;
+//     pid = bpf_get_current_pid_tgid() >> 32;
+//     // print the parameter in ctx
+//     bpf_printk("first parameter: %s\n", ctx->di); 
+    
+//     bpf_printk("unlinkat syscall called by pid %d with filename %s\n", pid, filename);
+//     return 0;
+// }
  
