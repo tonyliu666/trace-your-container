@@ -141,13 +141,22 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
 SEC("kprobe/do_unlinkat")
 int unlinkAt(struct pt_regs *ctx) {
     pid_t pid;
-    const char *filename;
+    const unsigned char* filename;
     struct file *file;
-    file = (struct file *) PT_REGS_PARM1(ctx);
+    struct dentry *dentry;
+    struct qstr d_name;
     pid = bpf_get_current_pid_tgid() >> 32;
-    // get the filename
-    filename = file->file
+   
+    file = (struct file *) PT_REGS_PARM1(ctx);
+    // print the file version
     
+    bpf_probe_read_kernel(&dentry, sizeof(dentry), &file->f_path.dentry);
+    bpf_probe_read_kernel(&d_name, sizeof(d_name), &dentry->d_name);
+    // check d_count is correct
+    bpf_printk("d_count: %s\n", dentry->d_iname);
+    bpf_probe_read_kernel_str(&filename, sizeof(filename), d_name.name);
+    // get the filename
+    bpf_printk("unlinkat syscall called by pid %d with filename %s\n", pid, filename);
     return 0;
 }
 // SEC("fentry/do_unlinkat")
