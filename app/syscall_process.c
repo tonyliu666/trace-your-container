@@ -56,7 +56,7 @@ int on_cgroup_create(struct bpf_raw_tracepoint_args *ctx) {
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
         // TODO: create an entry in the outer map
         struct event cgroup_event = {cgroup_id};
-        bpf_printk("cgroup created: %s, cgroup id: %d\n", cgroup_path, cgroup_id);
+        // bpf_printk("cgroup created: %s, cgroup id: %d\n", cgroup_path, cgroup_id);
         
         int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_event, sizeof(cgroup_event));
         if (ret == -2) {
@@ -92,7 +92,7 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     }
 
    else{
-        bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
+        // bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
         u32 syscallID_key = 2;
         u32 *count = bpf_map_lookup_elem(inner_map, &syscallID_key);
         if (count == NULL) {
@@ -120,7 +120,7 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
        return 0;
     }
     else{
-        bpf_printk("process %d in cgroup %d call system call id %ld\n", pid, cgroupId, syscall_id);
+        // bpf_printk("process %d in cgroup %d call system call id %ld\n", pid, cgroupId, syscall_id);
         // insert the syscallID into the inner map and the count of the syscallID
         u32 syscallID_key = (u32)syscall_id;
         
@@ -137,7 +137,6 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     return 0;
 }
 
-
 SEC("kprobe/do_unlinkat")
 int unlinkAt(struct pt_regs *ctx) {
     struct task_struct *task;
@@ -147,27 +146,37 @@ int unlinkAt(struct pt_regs *ctx) {
     struct file *exe_file;
     struct f_path *f_path;
     task = (struct task_struct *)bpf_get_current_task();
-    // pid_t pid = bpf_get_current_pid_tgid() >> 32;
-    // mm = BPF_CORE_READ(&mm, sizeof(struct mm_struct *), &task->mm);
+   
     p = BPF_CORE_READ(task, mm, exe_file, f_path);
-    bpf_probe_read_str(buf, sizeof(buf), p.dentry->d_iname);
-    // bpf_core_read_str(buf, sizeof(buf), p.dentry->d_iname);
-    pid_t pid = BPF_CORE_READ(task, pid);
-    bpf_printk("unlinkat syscall called by pid %d with filename %s\n", pid, buf);
-
-    //bpf_printk("unlinkat syscall called by pid %d with filename %s\n", task->utime, buf);
-
+    u64 cgroup_id = bpf_get_current_cgroup_id();
+    // bpf_printk("Cgroup ID: %llu\n", cgroup_id);
+    //bpf_probe_read_str(buf, sizeof(buf), p.dentry->d_iname);
+    
+    // pid_t pid = BPF_CORE_READ(task, pid);
+    pid_t pid;
+    bpf_probe_read(&pid, sizeof(pid), &task->pid);
+    //bpf_printk(" pid: %d\n", buf, pid);
+    // get the parent folder name
+    struct dentry *parent_dentry = BPF_CORE_READ(p.dentry, d_parent);
+    bpf_probe_read_str(buf, sizeof(buf), parent_dentry->d_iname);
+    // bpf_printk("parent folder name: %s\n", buf);
     return 0;
 }
-// SEC("fentry/do_unlinkat")
-// int unlinkAt(struct pt_regs *ctx) {
-//     pid_t pid;
-//     const char *filename;
-//     pid = bpf_get_current_pid_tgid() >> 32;
-//     // print the parameter in ctx
-//     bpf_printk("first parameter: %s\n", ctx->di); 
-    
-//     bpf_printk("unlinkat syscall called by pid %d with filename %s\n", pid, filename);
-//     return 0;
-// }
- 
+SEC("kprobe/vfs_unlink")
+int vfs_unlink(struct pt_regs *ctx) {
+    struct dentry *dentry;
+    struct path p;
+    struct mm_struct *mm;
+    struct file *exe_file;
+    struct f_path *f_path;
+    struct task_struct *task;
+    char buf[128];
+    task = (struct task_struct *)bpf_get_current_task();
+    p = BPF_CORE_READ(task, mm, exe_file, f_path);
+    bpf_probe_read_str(buf, sizeof(buf), p.dentry->d_iname);
+    // process id
+    pid_t pid;
+    bpf_probe_read(&pid, sizeof(pid), &task->pid);
+    bpf_printk("file path: %s, pid: %d\n", buf, pid);
+    return 0;
+}
