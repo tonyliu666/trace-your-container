@@ -140,23 +140,23 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
 
 SEC("kprobe/do_unlinkat")
 int unlinkAt(struct pt_regs *ctx) {
-    pid_t pid;
-    const unsigned char* filename;
-    struct file *file;
-    struct dentry *dentry;
-    struct qstr d_name;
-    pid = bpf_get_current_pid_tgid() >> 32;
-   
-    file = (struct file *) PT_REGS_PARM1(ctx);
-    // print the file version
-    
-    bpf_probe_read_kernel(&dentry, sizeof(dentry), &file->f_path.dentry);
-    bpf_probe_read_kernel(&d_name, sizeof(d_name), &dentry->d_name);
-    // check d_count is correct
-    bpf_printk("d_count: %s\n", dentry->d_iname);
-    bpf_probe_read_kernel_str(&filename, sizeof(filename), d_name.name);
-    // get the filename
-    bpf_printk("unlinkat syscall called by pid %d with filename %s\n", pid, filename);
+    struct task_struct *task;
+    char buf[128];
+    struct path p;
+    struct mm_struct *mm;
+    struct file *exe_file;
+    struct f_path *f_path;
+    task = (struct task_struct *)bpf_get_current_task();
+    // pid_t pid = bpf_get_current_pid_tgid() >> 32;
+    // mm = BPF_CORE_READ(&mm, sizeof(struct mm_struct *), &task->mm);
+    p = BPF_CORE_READ(task, mm, exe_file, f_path);
+    bpf_probe_read_str(buf, sizeof(buf), p.dentry->d_iname);
+    // bpf_core_read_str(buf, sizeof(buf), p.dentry->d_iname);
+    pid_t pid = BPF_CORE_READ(task, pid);
+    bpf_printk("unlinkat syscall called by pid %d with filename %s\n", pid, buf);
+
+    //bpf_printk("unlinkat syscall called by pid %d with filename %s\n", task->utime, buf);
+
     return 0;
 }
 // SEC("fentry/do_unlinkat")
