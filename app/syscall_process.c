@@ -114,49 +114,49 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
     if (!inner_map) {
         return 0;
-    } else {
-        char filename[128];
+    }   
+    
+    char filename[128];
         // Read the filename from the syscall argument
-        bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
-        struct fs_struct *fs = BPF_CORE_READ(task, fs);
-        struct path pwd = BPF_CORE_READ(fs, pwd);
-        struct dentry *dentry = pwd.dentry;
-        char buf[256];
-        int offset = sizeof(buf) - 1;  // Start from the end of the buffer
-        buf[offset] = '\0';            // Null-terminate the buffer
+    bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
+    struct fs_struct *fs = BPF_CORE_READ(task, fs);
+    struct path pwd = BPF_CORE_READ(fs, pwd);
+    struct dentry *dentry = pwd.dentry;
+    char buf[256];
+    int offset = sizeof(buf) - 1;  // Start from the end of the buffer
+    buf[offset] = '\0';            // Null-terminate the buffer
 
-        #pragma unroll
-        for (int i = 0; i < 10; i++) {  // Limit traversal to 10 levels
-            struct dentry *parent_dentry = BPF_CORE_READ(dentry, d_parent);
+    #pragma unroll
+    for (int i = 0; i < 10; i++) {  // Limit traversal to 10 levels
+        struct dentry *parent_dentry = BPF_CORE_READ(dentry, d_parent);
 
-            if (dentry == parent_dentry) {
-                // Reached the root
-                break;
-            }
+        if (dentry == parent_dentry) {
+            // Reached the root
+            break;
+        }
 
-            char dname[64];
-            int len = bpf_probe_read_str(dname, sizeof(dname), dentry->d_iname);
+        char dname[64];
+        int len = bpf_probe_read_str(dname, sizeof(dname), dentry->d_iname);
 
-            // Ensure we have a valid string length, and mask it to avoid negative values
-            if (len > 0) {
-                len &= 0xFF;  // Mask the length to ensure it's non-negative
+        // Ensure we have a valid string length, and mask it to avoid negative values
+         if (len > 0) {
+            len &= 0xFF;  // Mask the length to ensure it's non-negative
 
-                if (len < offset) {
-                    offset -= len;
-                    bpf_probe_read_str(&buf[offset], len, dname);
+            if (len < sizeof(buf)) {
+                // Copy the directory name to the start of the buffer
+                bpf_probe_read_str(buf, len, dname);
 
-                    if (offset > 0) {
-                        buf[--offset] = '/';  // Prepend a '/'
-                    }
+                // Prepend '/' if space allows
+                if (offset > len) {
+                    buf[offset - len - 1] = '/';
                 }
             }
-
-            // Move to parent directory
-            dentry = parent_dentry;
         }
-        bpf_printk("Unlinking file: %s, cgroupId: %d, current working directory: %s\n", filename, cgroupId, &buf[offset]);
-    }
 
+        // Move to parent directory
+        dentry = parent_dentry;
+    }
+    bpf_printk("Unlinking file: %s, cgroupId: %d, current working directory: %s\n", filename, cgroupId, &buf[offset]);
     return 0;
 }
 
