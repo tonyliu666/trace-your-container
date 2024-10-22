@@ -107,36 +107,60 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
 }
 SEC("tracepoint/syscalls/sys_enter_unlink")
 int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
-    // Access system call arguments or system call ID using `id` or `regs`
     u32 pid = (u32)bpf_get_current_pid_tgid();
-    struct task_struct *task; 
-
-    task = (struct task_struct *)bpf_get_current_task();
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
-    
+
     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
     if (!inner_map) {
-       return 0;
-    }
-    else{
+        return 0;
+    } else {
         char filename[128];
+        // Read the filename from the syscall argument
         bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
-        bpf_printk("process %d cgroup %d call unlink on file %s\n", pid, cgroupId, filename);
-        
-        // Try to access task->fs->pwd, which is the current working directory.
         struct fs_struct *fs = BPF_CORE_READ(task, fs);
         struct path pwd = BPF_CORE_READ(fs, pwd);
-        
-        // Get the dentry of the current working directory
-        
-        char buf[128];
-        bpf_probe_read_str(buf, sizeof(buf), pwd.dentry->d_iname);
-        bpf_printk("Current working directory: %s\n", buf);
+        struct dentry *dentry = pwd.dentry;
+        char buf[256];
+        int offset = sizeof(buf) - 1;  // Start from the end of the buffer
+        buf[offset] = '\0';            // Null-terminate the buffer
 
+        #pragma unroll
+        for (int i = 0; i < 10; i++) {  // Limit traversal to 10 levels
+            struct dentry *parent_dentry = BPF_CORE_READ(dentry, d_parent);
+
+            if (dentry == parent_dentry) {
+                // Reached the root
+                break;
+            }
+
+            char dname[64];
+            int len = bpf_probe_read_str(dname, sizeof(dname), dentry->d_iname);
+
+            // Ensure we have a valid string length, and mask it to avoid negative values
+            if (len > 0) {
+                len &= 0xFF;  // Mask the length to ensure it's non-negative
+
+                if (len < offset) {
+                    offset -= len;
+                    bpf_probe_read_str(&buf[offset], len, dname);
+
+                    if (offset > 0) {
+                        buf[--offset] = '/';  // Prepend a '/'
+                    }
+                }
+            }
+
+            // Move to parent directory
+            dentry = parent_dentry;
+        }
+        bpf_printk("Unlinking file: %s, cgroupId: %d, current working directory: %s\n", filename, cgroupId, &buf[offset]);
     }
-    
+
     return 0;
 }
+
+
 
 SEC("tp_btf/sys_enter")
 int sysEnter(struct trace_event_raw_sys_enter *ctx) {
