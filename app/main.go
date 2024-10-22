@@ -127,6 +127,18 @@ func createTracePointMap() error {
 	}
 	util.TracepointMaps["cgroup_mkdir"] = tp
 
+	// create sysEnterUnlink tracepoint
+	prog = util.EbpfCollection.Programs["sysEnterUnlink"]
+	if prog == nil {
+		log.Fatalf("program not found: %v", "sysEnterUnlink")
+	}
+	tp, err = link.Tracepoint("syscalls", "sys_enter_unlink", prog, nil)
+
+	if err != nil {
+		log.Fatalf("raw tracepoint error: %v", err)
+	}
+	util.TracepointMaps["sys_enter_unlink"] = tp
+
 	// unlinkAt:
 	prog = util.EbpfCollection.Programs["unlinkAt"]
 	if prog == nil {
@@ -137,16 +149,6 @@ func createTracePointMap() error {
 		log.Fatalf("sys open error: %v", err)
 	}
 	util.TracepointMaps["do_unlinkat"] = kprobe
-	// vfs_unlink:
-	prog = util.EbpfCollection.Programs["vfs_unlink"]
-	if prog == nil {
-		log.Fatalf("program not found: %v", "vfs_unlink")
-	}
-	kprobe, err = link.Kprobe("vfs_unlink", prog, nil)
-	if err != nil {
-		log.Fatalf("vfs unlink error: %v", err)
-	}
-	util.TracepointMaps["vfs_unlink"] = kprobe
 
 	// tp_btf/sys_enter
 	prog = util.EbpfCollection.Programs["sysEnter"]

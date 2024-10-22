@@ -92,7 +92,7 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     }
 
    else{
-        // bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
+        bpf_printk("Opening file: %s, cgroupId: %d", filename, cgroupId);
         u32 syscallID_key = 2;
         u32 *count = bpf_map_lookup_elem(inner_map, &syscallID_key);
         if (count == NULL) {
@@ -105,6 +105,29 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     }
 	return 0;
 }
+SEC("tracepoint/syscalls/sys_enter_unlink")
+int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
+    // Access system call arguments or system call ID using `id` or `regs`
+    u32 pid = (u32)bpf_get_current_pid_tgid();
+    struct task_struct *task; 
+
+    task = (struct task_struct *)bpf_get_current_task();
+    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    
+    struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
+    if (!inner_map) {
+       return 0;
+    }
+    else{
+        char filename[128];
+        bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
+        bpf_printk("process %d cgroup %d call unlink on file %s\n", pid, cgroupId, filename);
+
+    }
+    
+    return 0;
+}
+
 SEC("tp_btf/sys_enter")
 int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     // Access system call arguments or system call ID using `id` or `regs`
@@ -114,7 +137,9 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     if (syscall_id == 2){
         return 0;
     }
+    
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    
     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
     if (!inner_map) {
        return 0;
@@ -160,23 +185,5 @@ int unlinkAt(struct pt_regs *ctx) {
     struct dentry *parent_dentry = BPF_CORE_READ(p.dentry, d_parent);
     bpf_probe_read_str(buf, sizeof(buf), parent_dentry->d_iname);
     // bpf_printk("parent folder name: %s\n", buf);
-    return 0;
-}
-SEC("kprobe/vfs_unlink")
-int vfs_unlink(struct pt_regs *ctx) {
-    struct dentry *dentry;
-    struct path p;
-    struct mm_struct *mm;
-    struct file *exe_file;
-    struct f_path *f_path;
-    struct task_struct *task;
-    char buf[128];
-    task = (struct task_struct *)bpf_get_current_task();
-    p = BPF_CORE_READ(task, mm, exe_file, f_path);
-    bpf_probe_read_str(buf, sizeof(buf), p.dentry->d_iname);
-    // process id
-    pid_t pid;
-    bpf_probe_read(&pid, sizeof(pid), &task->pid);
-    bpf_printk("file path: %s, pid: %d\n", buf, pid);
     return 0;
 }
