@@ -122,6 +122,16 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
         char filename[128];
         bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
         bpf_printk("process %d cgroup %d call unlink on file %s\n", pid, cgroupId, filename);
+        
+        // Try to access task->fs->pwd, which is the current working directory.
+        struct fs_struct *fs = BPF_CORE_READ(task, fs);
+        struct path pwd = BPF_CORE_READ(fs, pwd);
+        
+        // Get the dentry of the current working directory
+        
+        char buf[128];
+        bpf_probe_read_str(buf, sizeof(buf), pwd.dentry->d_iname);
+        bpf_printk("Current working directory: %s\n", buf);
 
     }
     
