@@ -2,12 +2,15 @@
 // #include <linux/bpf.h>
 // #include <linux/types.h>
 #define __TARGET_ARCH_x86
+#define MAX_PATH_LEN 64
+#define LIMIT_PATH_LEN(x) ((x) & (MAX_PATH_LEN - 1))
 # include "common.h"
 #include <bpf/bpf_helpers.h>
   // For task_struct and process-related functions
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
+
 
 
 // try to load the ebpf map from /sys/fs/bpf/outer_map
@@ -105,140 +108,72 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     }
 	return 0;
 }
-// SEC("tracepoint/syscalls/sys_enter_unlink")
-// int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
-//     u32 pid = (u32)bpf_get_current_pid_tgid();
-//     struct task_struct *task = (struct task_struct *)bpf_get_current_task();
-//     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
-
-//     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
-//     if (!inner_map) {
-//         return 0;
-//     }   
-    
-//     char filename[128];
-//         // Read the filename from the syscall argument
-//     bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
-//     struct fs_struct *fs = BPF_CORE_READ(task, fs);
-//     struct path pwd = BPF_CORE_READ(fs, pwd);
-//     struct dentry *dentry = pwd.dentry;
-//     char buf[256];
-//     int offset = sizeof(buf) - 1;  // Start from the end of the buffer
-//     buf[offset] = '\0';            // Null-terminate the buffer
-
-//     #pragma unroll
-//     for (int i = 0; i < 10; i++) {  // Limit traversal to 10 levels
-//         struct dentry *parent_dentry = BPF_CORE_READ(dentry, d_parent);
-
-//         if (dentry == parent_dentry) {
-//             // Reached the root
-//             break;
-//         }
-
-//         char dname[64];
-//         int len = bpf_probe_read_str(dname, sizeof(dname), dentry->d_iname);
-
-        // if (len > 0 && len < sizeof(dname)) {
-        //     len &= 0xFF;  // Ensure the length is non-negative
-
-        //     // Ensure offset is within bounds
-        //     if (offset > len + 1) {
-        //         offset -= len;
-
-        //         // Manually copy the directory name into the buffer
-        //         #pragma unroll
-        //         for (int j = 0; j < len; j++) {
-        //             buf[offset + j] = dname[j];
-        //         }
-
-        //         // Add a slash if there's space and the offset is still valid
-        //         if (offset > 0) {
-        //             buf[--offset] = '/';  // Prepend a '/'
-        //         }
-        //     }
-        // }
-
-//         // Move to parent directory
-//         dentry = parent_dentry;
-//     }
-//     // bpf_printk("Unlinking file: %s, cgroupId: %d, current working directory: %s\n", filename, cgroupId, buf[offset]);
-//     bpf_printk("Unlinking file: %s, cgroupId: %d, current working directory: %s\n", filename, cgroupId, &buf[offset]);
-//     return 0;
-// }
 
 SEC("tracepoint/syscalls/sys_enter_unlink")
 int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
-    u32 pid = (u32)bpf_get_current_pid_tgid();
     struct task_struct *task = (struct task_struct *)bpf_get_current_task();
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
 
     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
     if (!inner_map) {
         return 0;
-    }   
+    }
 
-    char filename[128];
+    char filename[32];
     // Read the filename from the syscall argument
     bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
-    
+
     struct fs_struct *fs = BPF_CORE_READ(task, fs);
     struct path pwd = BPF_CORE_READ(fs, pwd);
     struct dentry *dentry = pwd.dentry;
-    char buf[256];
-    int offset = 0; // Start from the beginning of the buffer
+    struct qstr d_name;
+    int old_offset = 0;
+    int cur_offset = 0;
+    int buf_offset = MAX_PATH_LEN - 1;
+    u32 name_len = 0;
+
+    char filepath[32];
+    char path[MAX_PATH_LEN];
+    path[buf_offset] = '\0';
+    buf_offset -= 1; 
 
     #pragma unroll
-    for (int i = 0; i < 10; i++) {  // Limit traversal to 10 levels
+    for (int i = 0; i < 20; i++) {  // Limit traversal to 10 levels
         struct dentry *parent_dentry = BPF_CORE_READ(dentry, d_parent);
-
         if (dentry == parent_dentry) {
             break;
         }
         
         char dname[64];
-        int len = bpf_probe_read_str(dname, sizeof(dname), dentry->d_iname);
-        
-        // len &= 0xFF;  
-        // if (len > 0 && len < sizeof(dname)) {
-        //     if (offset >= len) {
-        //         offset -= len;
-
-        //         if (offset > 0) {
-        //             bpf_probe_read_user_str(&buf[offset], len, dname);
-        //         }
-        //         offset-=2;
-        //         if (offset > 0) {
-        //             char slash[2];
-        //             slash[0] = '/';
-        //             slash[1] = '\0';
-        //             bpf_probe_read_user_str(&buf[offset], sizeof(slash), slash);
-        //         }
-        //     }
-        // }
-        len &= 0xFF;
-        if (len > 0 && len < sizeof(dname)) {
-            // Ensure we have space in the buffer for both the dname and a '/' separator
-            if (offset > len) {
-                offset -= len;
-                // Use fixed size reads for copying the string
-                bpf_probe_read_str(&buf[offset], sizeof(dname), dname);
-
-                if (offset > 0) {
-                    buf[--offset] = '/';  // Prepend a '/'
-                }
-            }
+        d_name =  BPF_CORE_READ(dentry,d_name);
+        bpf_probe_read_kernel(&name_len, sizeof(name_len), &dentry->d_name.len);
+        // store the dname into the path array
+        bpf_probe_read_str(filepath,sizeof(filepath), d_name.name);
+        bpf_printk("current path: %s and length: %d", filepath, name_len);
+        old_offset = buf_offset;
+        buf_offset = buf_offset - name_len; // include '/'
+        if(buf_offset < 0) {
+            bpf_printk("path too long\n");
+            break;
         }
-        
+        cur_offset = LIMIT_PATH_LEN(buf_offset);
+        name_len = LIMIT_PATH_LEN(name_len);
+        bpf_probe_read_str(&path[cur_offset], name_len, d_name.name);
+        buf_offset = LIMIT_PATH_LEN(cur_offset - 1);
+        path[buf_offset] = '/';
+        path[old_offset] = '/';
 
-        // Move to parent directory
+        // Move to the parent directory
         dentry = parent_dentry;
     }
+    buf_offset = LIMIT_PATH_LEN(buf_offset);
 
-    // Print the path from the buffer
-    bpf_printk("Unlinking file: %s, cgroupId: %d, current working directory: %s\n", filename, cgroupId, &buf[offset]);
+    bpf_printk("buffer offset: %d\n", buf_offset);
+    bpf_printk("path: %s\n", &path[buf_offset]);
 
     return 0;
 }
+
 
 
 SEC("tp_btf/sys_enter")
