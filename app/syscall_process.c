@@ -109,6 +109,74 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
 	return 0;
 }
 
+// SEC("tracepoint/syscalls/sys_enter_unlink")
+// int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
+//     struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+//     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+
+//     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
+//     if (!inner_map) {
+//         return 0;
+//     }
+
+//     char filename[32];
+//     // Read the filename from the syscall argument
+//     bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
+
+//     struct fs_struct *fs = BPF_CORE_READ(task, fs);
+//     struct path pwd = BPF_CORE_READ(fs, pwd);
+//     struct dentry *dentry = pwd.dentry;
+//     struct qstr d_name;
+//     int old_offset = 0;
+//     int cur_offset = 0;
+//     int buf_offset = MAX_PATH_LEN - 1;
+//     u32 name_len = 0;
+
+//     char filepath[32];
+//     char path[MAX_PATH_LEN];
+//     path[buf_offset] = '\0';
+//     buf_offset -= 1; 
+
+//     #pragma unroll
+//     for (int i = 0; i < 20; i++) {  // Limit traversal to 10 levels
+//         struct dentry *parent_dentry = BPF_CORE_READ(dentry, d_parent);
+//         if (dentry == parent_dentry) {
+//             break;
+//         }
+        
+//         char dname[64];
+//         d_name =  BPF_CORE_READ(dentry,d_name);
+//         bpf_probe_read_kernel(&name_len, sizeof(name_len), &dentry->d_name.len);
+//         // store the dname into the path array
+//         bpf_probe_read_str(filepath,sizeof(filepath), d_name.name);
+//         bpf_printk("current path: %s and length: %d", filepath, name_len);
+//         old_offset = buf_offset;
+//         buf_offset = buf_offset - name_len; // include '/'
+//         if(buf_offset < 0) {
+//             bpf_printk("path too long\n");
+//             break;
+//         }
+//         cur_offset = LIMIT_PATH_LEN(buf_offset);
+//         name_len = LIMIT_PATH_LEN(name_len);
+//         bpf_probe_read_str(&path[cur_offset], name_len, d_name.name);
+//         buf_offset = LIMIT_PATH_LEN(cur_offset - 1);
+//         path[buf_offset] = '/';
+//         path[old_offset] = '/';
+
+//         // Move to the parent directory
+//         dentry = parent_dentry;
+//     }
+//     buf_offset = LIMIT_PATH_LEN(buf_offset);
+
+//     bpf_printk("buffer offset: %d\n", buf_offset);
+//     bpf_printk("path: %s\n", &path[buf_offset]);
+
+//     return 0;
+// }
+
+
+
+
 SEC("tracepoint/syscalls/sys_enter_unlink")
 int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
     struct task_struct *task = (struct task_struct *)bpf_get_current_task();
@@ -118,60 +186,64 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
     if (!inner_map) {
         return 0;
     }
-
+    
     char filename[32];
-    // Read the filename from the syscall argument
-    bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
-
     struct fs_struct *fs = BPF_CORE_READ(task, fs);
     struct path pwd = BPF_CORE_READ(fs, pwd);
     struct dentry *dentry = pwd.dentry;
     struct qstr d_name;
-    int old_offset = 0;
-    int cur_offset = 0;
-    int buf_offset = MAX_PATH_LEN - 1;
+    int buf_offset = MAX_PATH_LEN;
     u32 name_len = 0;
 
-    char filepath[32];
+    // Buffer for constructing the full path
+    char filepath[64];
     char path[MAX_PATH_LEN];
-    path[buf_offset] = '\0';
-    buf_offset -= 1; 
+    bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
+    // get the length of the filename
+    bpf_probe_read_kernel(&name_len, sizeof(name_len), &dentry->d_name.len);
+    bpf_printk("length of the filename: %d\n", name_len);
 
+    buf_offset = LIMIT_PATH_LEN(buf_offset - name_len-1);
+    bpf_probe_read_str(&path[buf_offset], LIMIT_PATH_LEN(name_len)+1, filename);
+    bpf_printk("filepath: %s\n", &path[buf_offset]);
+    
     #pragma unroll
-    for (int i = 0; i < 20; i++) {  // Limit traversal to 10 levels
+    for (int i = 0; i < 40; i++) {  // Limit traversal to 20 levels
         struct dentry *parent_dentry = BPF_CORE_READ(dentry, d_parent);
         if (dentry == parent_dentry) {
-            break;
+            break;  // Stop if root is reached
         }
         
-        char dname[64];
-        d_name =  BPF_CORE_READ(dentry,d_name);
-        bpf_probe_read_kernel(&name_len, sizeof(name_len), &dentry->d_name.len);
-        // store the dname into the path array
-        bpf_probe_read_str(filepath,sizeof(filepath), d_name.name);
-        bpf_printk("current path: %s and length: %d", filepath, name_len);
-        old_offset = buf_offset;
-        buf_offset = buf_offset - name_len; // include '/'
-        if(buf_offset < 0) {
+        d_name = BPF_CORE_READ(dentry, d_name);
+        bpf_probe_read_kernel(&name_len, sizeof(name_len), &d_name.len);
+        
+        // Reduce buffer offset and ensure it's within valid bounds
+        buf_offset = LIMIT_PATH_LEN(buf_offset - name_len-1);  // Account for '/' and name_len
+        if (buf_offset < 0) {
             bpf_printk("path too long\n");
             break;
         }
-        cur_offset = LIMIT_PATH_LEN(buf_offset);
-        name_len = LIMIT_PATH_LEN(name_len);
-        bpf_probe_read_str(&path[cur_offset], name_len, d_name.name);
-        buf_offset = LIMIT_PATH_LEN(cur_offset - 1);
-        path[buf_offset] = '/';
-        path[old_offset] = '/';
+
+        // Copy the directory name into the path buffer
+        bpf_probe_read_str(&path[buf_offset], LIMIT_PATH_LEN(name_len+1), d_name.name);
+        int front_offset = LIMIT_PATH_LEN(buf_offset-1);
+        int back_offset = LIMIT_PATH_LEN(buf_offset + name_len);
+        path[front_offset] = '/';  // Add '/' before the directory name
+        path[back_offset] = '/';  // Null-terminate the string
+        
+        
+        bpf_printk("current path: %s and length: %d", &path[front_offset], name_len);
 
         // Move to the parent directory
         dentry = parent_dentry;
     }
-    buf_offset = LIMIT_PATH_LEN(buf_offset);
 
-    bpf_printk("buffer offset: %d\n", buf_offset);
-    bpf_printk("path: %s\n", &path[buf_offset]);
+    // Print the final constructed path without the null terminator
+    // bpf_printk("final buffer offset: %d\n", buf_offset);
+    // bpf_printk("constructed path: %s\n", &path[buf_offset]);
 
     return 0;
+
 }
 
 
