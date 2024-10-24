@@ -11,12 +11,15 @@ import (
 	"github.com/cilium/ebpf/perf"
 )
 
-type Event struct {
+type innerMapEvent struct {
 	CgroupID uint32
+}
+type fileDeleteEvent struct {
+	filepath string
 }
 
 func MessagePerfBufferCreateInnerMap(perfName string) {
-	var event Event
+	var event innerMapEvent
 	reader, err := perf.NewReader(util.EbpfCollection.Maps[perfName], os.Getpagesize())
 	if err != nil {
 		panic(err)
@@ -39,5 +42,27 @@ func MessagePerfBufferCreateInnerMap(perfName string) {
 			fmt.Printf("Error inserting entry to inner map: %v\n", err)
 		}
 		fmt.Printf("Inserted inner map %d to the entry of outer map\n", event.CgroupID)
+	}
+}
+
+func DeleteFileEvent(perfName string) {
+	var event fileDeleteEvent
+	reader, err := perf.NewReader(util.EbpfCollection.Maps[perfName], os.Getpagesize())
+	if err != nil {
+		panic(err)
+	}
+	defer reader.Close()
+
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			panic(err)
+		}
+		err = binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event)
+		if err != nil {
+			fmt.Printf("Error parsing event: %v\n", err)
+			continue
+		}
+		fmt.Printf("Event - Filepath: %s\n", event.filepath)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/containerd/cgroups"
 	cgroup2 "github.com/containerd/cgroups/v3/cgroup2"
@@ -86,6 +87,20 @@ func perfEventArrayMap() error {
 	if err := util.PerfMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
 		return err
 	}
+	mapSpec = &ebpf.MapSpec{
+		Type:      ebpf.PerfEventArray,
+		KeySize:   4,
+		ValueSize: 4,
+	}
+	containerEventsMap, err := ebpf.NewMap(mapSpec)
+	if err != nil {
+		log.Fatalf("failed to create perf event array map: %v", err)
+	}
+	util.ContainerEventMap = containerEventsMap
+	if err := util.ContainerEventMap.Pin("/sys/fs/bpf/container_events"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -265,7 +280,16 @@ func main() {
 		}
 
 	}
-
-	perf.MessagePerfBufferCreateInnerMap("cgroup_events")
+	// main go routine wait until the following go routines terminated
+	// create wait group
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	// create go routine for each function
+	go func() {
+		perf.MessagePerfBufferCreateInnerMap("cgroup_events")
+		perf.DeleteFileEvent("container_events")
+		defer wg.Done()
+	}()
+	wg.Wait()
 
 }

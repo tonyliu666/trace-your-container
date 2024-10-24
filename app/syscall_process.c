@@ -37,8 +37,18 @@ struct {
 	__uint(value_size, sizeof(u32));
 } cgroup_events SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+	__uint(key_size, sizeof(u32));
+	__uint(value_size, sizeof(u32));
+} container_events SEC(".maps");
+
 struct event {
     u32 cgroupID; 
+};
+struct path_event {
+    char path[MAX_PATH_LEN];
+    int offsets;
 };
 
 
@@ -124,19 +134,19 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
     struct path pwd = BPF_CORE_READ(fs, pwd);
     struct dentry *dentry = pwd.dentry;
     struct qstr d_name;
-    int buf_offset = MAX_PATH_LEN;
     u32 name_len = 0;
 
     // Buffer for constructing the full path
-    char filepath[64];
-    char path[MAX_PATH_LEN];
     bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
+    int buf_offset = MAX_PATH_LEN;
+
+    struct path_event event = {};
+    event.offsets = buf_offset;
     // get the length of the filename
     bpf_probe_read_kernel(&name_len, sizeof(name_len), &dentry->d_name.len);
 
-
-    buf_offset = LIMIT_PATH_LEN(buf_offset - name_len-1);
-    bpf_probe_read_str(&path[buf_offset], LIMIT_PATH_LEN(name_len)+1, filename);
+    event.offsets = LIMIT_PATH_LEN(event.offsets - name_len-1);
+    bpf_probe_read_str(&event.path[event.offsets], LIMIT_PATH_LEN(name_len+1), filename);
 
     
     #pragma unroll
@@ -150,25 +160,25 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
         bpf_probe_read_kernel(&name_len, sizeof(name_len), &d_name.len);
         
         // Reduce buffer offset and ensure it's within valid bounds
-        buf_offset = LIMIT_PATH_LEN(buf_offset - name_len-1);  // Account for '/' and name_len
-        if (buf_offset < 0) {
+        event.offsets = LIMIT_PATH_LEN(event.offsets - name_len-1);  // Account for '/' and name_len
+        if (event.offsets < 0) {
             bpf_printk("path too long\n");
             break;
         }
 
         // Copy the directory name into the path buffer
-        bpf_probe_read_str(&path[buf_offset], LIMIT_PATH_LEN(name_len+1), d_name.name);
-        int front_offset = LIMIT_PATH_LEN(buf_offset-1);
-        int back_offset = LIMIT_PATH_LEN(buf_offset + name_len);
-        path[front_offset] = '/';  // Add '/' before the directory name
-        path[back_offset] = '/';  // Null-terminate the string
+        bpf_probe_read_str(&event.path[event.offsets], LIMIT_PATH_LEN(name_len+1), d_name.name);
+        int front_offset = LIMIT_PATH_LEN(event.offsets-1);
+        int back_offset = LIMIT_PATH_LEN(event.offsets + name_len);
+        event.path[front_offset] = '/';  // Add '/' before the directory name
+        event.path[back_offset] = '/';  // Null-terminate the string
         
         // Move to the parent directory
         dentry = parent_dentry;
     }
-
+    event.offsets = LIMIT_PATH_LEN(event.offsets);
     // Print the final constructed path without the null terminator
-    bpf_printk("final path: %s\n", &path[buf_offset]);
+    bpf_printk("Unlinking file: %s\n", event.path+event.offsets);
 
     return 0;
 

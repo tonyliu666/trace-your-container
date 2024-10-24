@@ -6,8 +6,9 @@ import (
 )
 
 var (
-	OuterMap *ebpf.Map
-	PerfMap  *ebpf.Map
+	OuterMap          *ebpf.Map
+	PerfMap           *ebpf.Map
+	ContainerEventMap *ebpf.Map
 	// create process id maps, value  is the list of uint64
 	ProcessIDMaps = make(map[uint64][]uint64)
 	// create tracepoint maps, key is the name of the tracepoint, value is the link.Link
