@@ -90,7 +90,7 @@ func perfEventArrayMap() error {
 	mapSpec = &ebpf.MapSpec{
 		Type:      ebpf.PerfEventArray,
 		KeySize:   4,
-		ValueSize: 4,
+		ValueSize: 4, // 64 bytes for the event path and 4 bytes for the offsets(defined in syscall_process.c)
 	}
 	containerEventsMap, err := ebpf.NewMap(mapSpec)
 	if err != nil {
@@ -283,13 +283,17 @@ func main() {
 	// main go routine wait until the following go routines terminated
 	// create wait group
 	wg := sync.WaitGroup{}
-	wg.Add(1)
+	wg.Add(2)
 	// create go routine for each function
 	go func() {
 		perf.MessagePerfBufferCreateInnerMap("cgroup_events")
+		defer wg.Done()
+	}()
+	go func() {
 		perf.DeleteFileEvent("container_events")
 		defer wg.Done()
 	}()
+
 	wg.Wait()
 
 }

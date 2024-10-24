@@ -11,8 +11,6 @@
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
 
-
-
 // try to load the ebpf map from /sys/fs/bpf/outer_map
 
 char __license[] SEC("license") = "Dual MIT/GPL"; 
@@ -31,6 +29,17 @@ struct {
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
 
+struct event {
+    u32 cgroupID; 
+};
+struct path_event {
+    char path[MAX_PATH_LEN];
+    int offsets;
+};
+struct test_event{
+    u32 offsets;
+};
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
 	__uint(key_size, sizeof(u32));
@@ -42,15 +51,6 @@ struct {
 	__uint(key_size, sizeof(u32));
 	__uint(value_size, sizeof(u32));
 } container_events SEC(".maps");
-
-struct event {
-    u32 cgroupID; 
-};
-struct path_event {
-    char path[MAX_PATH_LEN];
-    int offsets;
-};
-
 
 SEC("raw_tracepoint/cgroup_mkdir")
 int on_cgroup_create(struct bpf_raw_tracepoint_args *ctx) {
@@ -179,12 +179,18 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
     event.offsets = LIMIT_PATH_LEN(event.offsets);
     // Print the final constructed path without the null terminator
     bpf_printk("Unlinking file: %s\n", event.path+event.offsets);
-
+   
+    // don't use BPF_F_CURRENT_CPU
+    int ret = bpf_perf_event_output(ctx, &container_events, BPF_F_CURRENT_CPU, &event, sizeof(event));
+    if (ret == -2) {
+        bpf_printk("Error sending to perf event buffer: %d\n", ret);
+    }
+    else if(ret == 0){
+        bpf_printk("send path to perf event array\n");
+    }
     return 0;
 
 }
-
-
 
 SEC("tp_btf/sys_enter")
 int sysEnter(struct trace_event_raw_sys_enter *ctx) {

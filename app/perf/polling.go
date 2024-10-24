@@ -11,11 +11,15 @@ import (
 	"github.com/cilium/ebpf/perf"
 )
 
+const MAX_PATH_LEN = 64
+
 type innerMapEvent struct {
 	CgroupID uint32
 }
+
 type fileDeleteEvent struct {
-	filepath string
+	Filepath [MAX_PATH_LEN]byte // Fixed-size array for the path
+	Offsets  int32              // Match C 'int' to Go 'int32'
 }
 
 func MessagePerfBufferCreateInnerMap(perfName string) {
@@ -58,11 +62,14 @@ func DeleteFileEvent(perfName string) {
 		if err != nil {
 			panic(err)
 		}
+
 		err = binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event)
 		if err != nil {
 			fmt.Printf("Error parsing event: %v\n", err)
 			continue
 		}
-		fmt.Printf("Event - Filepath: %s\n", event.filepath)
+		// print the path  combining the path and the offset
+		fmt.Printf("file name: %s\n", event.Filepath[event.Offsets:])
+
 	}
 }
