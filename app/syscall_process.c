@@ -31,6 +31,7 @@ struct {
 
 struct event {
     u32 cgroupID; 
+    int createORdelete;
 };
 struct path_event {
     char path[MAX_PATH_LEN];
@@ -68,7 +69,7 @@ int on_cgroup_create(struct bpf_raw_tracepoint_args *ctx) {
     
     if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
         // TODO: create an entry in the outer map
-        struct event cgroup_event = {cgroup_id};
+        struct event cgroup_event = {cgroup_id, 1};
         // bpf_printk("cgroup created: %s, cgroup id: %d\n", cgroup_path, cgroup_id);
         
         int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_event, sizeof(cgroup_event));
@@ -80,7 +81,38 @@ int on_cgroup_create(struct bpf_raw_tracepoint_args *ctx) {
         }
         
     }
+    return 0;
+}
 
+// create an macro that handle container deletion
+SEC("raw_tracepoint/cgroup_rmdir")
+int on_cgroup_delete(struct bpf_raw_tracepoint_args *ctx) {
+    char cgroup_path[128];
+    const char *path = (const char *) ctx->args[1];
+    const char *compare_path = "/system.slice/docker";
+    u64 cgroup_id;
+
+    struct cgroup *dst_cgrp = (struct cgroup *) ctx->args[0];
+    struct kernfs_node *kn = BPF_CORE_READ(dst_cgrp, kn);
+    // kernel v5.5 and above
+    bpf_core_read(&cgroup_id, sizeof(u64), &kn->id);
+    
+    bpf_probe_read_str(cgroup_path, sizeof(cgroup_path), path);
+    
+    if (bpf_strncmp(cgroup_path,(u32)20, compare_path) == 0) {
+        // TODO: create an entry in the outer map
+        struct event cgroup_event = {cgroup_id, 0};
+        // bpf_printk("cgroup created: %s, cgroup id: %d\n", cgroup_path, cgroup_id);
+        
+        int ret = bpf_perf_event_output(ctx, &cgroup_events, BPF_F_CURRENT_CPU, &cgroup_event, sizeof(cgroup_event));
+        if (ret == -2) {
+            bpf_printk("Error sending to perf event buffer: %d\n", ret);
+        }
+        else if(ret == 0){
+            bpf_printk("send cgroup id to perf event array\n");
+        }
+        
+    }
     return 0;
 }
 

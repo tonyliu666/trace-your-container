@@ -25,6 +25,16 @@ func InsertEntryToInnerMap(cgroupInodeNum uint32) error {
 	}
 	return nil
 }
+func DeleteEntryFromInnerMap(cgroupInodeNum uint32) error {
+	maps := util.EbpfCollection.Maps["outer_map"]
+
+	// if err := util.OuterMap.Delete(uint32(cgroupInodeNum)); err != nil {
+	if err := maps.Delete(uint32(cgroupInodeNum)); err != nil {
+		log.Fatalf("outerMap.Delete: %v", err)
+		return err
+	}
+	return nil
+}
 func CreateInnerMapSpec(pid uint64) ebpf.MapSpec {
 	fill_portion := ""
 	if pid != 0 {

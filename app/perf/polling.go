@@ -14,7 +14,8 @@ import (
 const MAX_PATH_LEN = 64
 
 type innerMapEvent struct {
-	CgroupID uint32
+	CgroupID       uint32
+	InsertORdelete int32
 }
 
 type fileDeleteEvent struct {
@@ -40,12 +41,20 @@ func MessagePerfBufferCreateInnerMap(perfName string) {
 			fmt.Printf("Error parsing event: %v\n", err)
 			continue
 		}
-		fmt.Printf("Event - CgroupID: %d\n", event.CgroupID)
-		err = cgroup.InsertEntryToInnerMap(event.CgroupID)
-		if err != nil {
-			fmt.Printf("Error inserting entry to inner map: %v\n", err)
+
+		if event.InsertORdelete == 1 {
+			err = cgroup.InsertEntryToInnerMap(event.CgroupID)
+			if err != nil {
+				fmt.Printf("Error inserting entry to inner map: %v\n", err)
+			}
+			fmt.Printf("Inserted inner map %d to the entry of outer map\n", event.CgroupID)
+		} else {
+			err = cgroup.DeleteEntryFromInnerMap(event.CgroupID)
+			if err != nil {
+				fmt.Printf("Error deleting entry from inner map: %v\n", err)
+			}
+			fmt.Printf("Deleted inner map %d from the entry of outer map\n", event.CgroupID)
 		}
-		fmt.Printf("Inserted inner map %d to the entry of outer map\n", event.CgroupID)
 	}
 }
 

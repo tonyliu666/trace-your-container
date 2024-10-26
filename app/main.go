@@ -142,6 +142,20 @@ func createTracePointMap() error {
 	}
 	util.TracepointMaps["cgroup_mkdir"] = tp
 
+	// create cgroup_rmdir tracepoint
+	prog = util.EbpfCollection.Programs["on_cgroup_delete"]
+	if prog == nil {
+		log.Fatalf("program not found: %v", " on_cgroup_delete")
+	}
+	tp, err = link.AttachRawTracepoint(link.RawTracepointOptions{
+		Name:    "cgroup_rmdir",
+		Program: prog,
+	})
+	if err != nil {
+		log.Fatalf("raw tracepoint error: %v", err)
+	}
+	util.TracepointMaps["cgroup_rmdir"] = tp
+
 	// create sysEnterUnlink tracepoint
 	prog = util.EbpfCollection.Programs["sysEnterUnlink"]
 	if prog == nil {
@@ -289,6 +303,7 @@ func main() {
 		perf.MessagePerfBufferCreateInnerMap("cgroup_events")
 		defer wg.Done()
 	}()
+
 	go func() {
 		perf.DeleteFileEvent("container_events")
 		defer wg.Done()
