@@ -168,17 +168,6 @@ func createTracePointMap() error {
 	}
 	util.TracepointMaps["sys_enter_unlink"] = tp
 
-	// unlinkAt:
-	prog = util.EbpfCollection.Programs["unlinkAt"]
-	if prog == nil {
-		log.Fatalf("program not found: %v", "unlinkAt")
-	}
-	kprobe, err := link.Kprobe("do_unlinkat", prog, nil)
-	if err != nil {
-		log.Fatalf("sys open error: %v", err)
-	}
-	util.TracepointMaps["do_unlinkat"] = kprobe
-
 	// tp_btf/sys_enter
 	prog = util.EbpfCollection.Programs["sysEnter"]
 	if prog == nil {
@@ -192,6 +181,24 @@ func createTracePointMap() error {
 		log.Fatalf("raw tracepoint error: %v", err)
 	}
 	util.TracepointMaps["sys_enter"] = tp
+
+	// atttach to cgroup_skb/ingress
+	prog = util.EbpfCollection.Programs["ingress"]
+	if prog == nil {
+		log.Fatalf("program not found: %v", "ingress")
+	}
+
+	for _, direction := range cgroup.BPFCgroupNetworkDirections {
+		link, err := link.AttachCgroup(link.CgroupOptions{
+			Path:    TARGET_CGROUP_V2_PATH,
+			Attach:  direction.AttachType,
+			Program: collec.Programs[direction.Name],
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer link.Close()
+	}
 
 	return nil
 

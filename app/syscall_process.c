@@ -10,8 +10,8 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
-
-// try to load the ebpf map from /sys/fs/bpf/outer_map
+#include <netinet/ip.h>
+#include <netinet/ip6.h>
 
 char __license[] SEC("license") = "Dual MIT/GPL"; 
 
@@ -28,6 +28,12 @@ struct {
 	__uint(max_entries, 1024); 
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
+
+struct{
+    __uint(type, BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE);
+    __type(key, struct bpf_cgroup_storage_key);
+    __type(value, __u64);
+} cgroup_network_map SEC("maps");
 
 struct event {
     u32 cgroupID; 
@@ -257,29 +263,49 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     
     return 0;
 }
+inline int handle_skb(struct __sk_buff *skb)
+{
+    __u16 bytes = 0;
 
-SEC("kprobe/do_unlinkat")
-int unlinkAt(struct pt_regs *ctx) {
-    struct task_struct *task;
-    char buf[128];
-    struct path p;
-    struct mm_struct *mm;
-    struct file *exe_file;
-    struct f_path *f_path;
-    task = (struct task_struct *)bpf_get_current_task();
-   
-    p = BPF_CORE_READ(task, mm, exe_file, f_path);
-    u64 cgroup_id = bpf_get_current_cgroup_id();
-    // bpf_printk("Cgroup ID: %llu\n", cgroup_id);
-    //bpf_probe_read_str(buf, sizeof(buf), p.dentry->d_iname);
-    
-    // pid_t pid = BPF_CORE_READ(task, pid);
-    pid_t pid;
-    bpf_probe_read(&pid, sizeof(pid), &task->pid);
-    //bpf_printk(" pid: %d\n", buf, pid);
-    // get the parent folder name
-    struct dentry *parent_dentry = BPF_CORE_READ(p.dentry, d_parent);
-    bpf_probe_read_str(buf, sizeof(buf), parent_dentry->d_iname);
-    // bpf_printk("parent folder name: %s\n", buf);
-    return 0;
+    // Extract packet size from IPv4 / IPv6 header
+    switch (skb->family)
+    {
+    case AF_INET:
+        {
+            struct iphdr iph;
+            bpf_skb_load_bytes(skb, 0, &iph, sizeof(struct iphdr));
+            bytes = ntohs(iph.tot_len);
+            break;
+        }
+    case AF_INET6:
+        {
+            struct ip6_hdr ip6h;
+            bpf_skb_load_bytes(skb, 0, &ip6h, sizeof(struct ip6_hdr));
+            bytes = ntohs(ip6h.ip6_plen);
+            break;
+        }
+    default:
+        // This should never be the case as this eBPF hook is called in
+        // netfilter context and thus not for AF_PACKET, AF_UNIX nor AF_NETLINK
+        // for instance.
+        return true;
+    }
+
+    // Update counters in the per-cgroup map
+    __u64 *bytes_counter = bpf_get_local_storage(&cgroup_network_map, 0);
+    __sync_fetch_and_add(bytes_counter, bytes);
+
+    // Let the packet pass
+    return true;
+}
+
+
+SEC("cgroup_skb/ingress") 
+int ingress(struct __sk_buff *skb){
+    return handle_skb(skb);
+}
+// Egress hook - handle outgoing packets
+SEC("cgroup_skb/egress") 
+int egress(struct __sk_buff *skb){
+    return handle_skb(skb);
 }
