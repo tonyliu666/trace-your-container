@@ -17,9 +17,10 @@ import (
 
 func CreateCgroupMap() error {
 	cgroupNetworkMapSpec := &ebpf.MapSpec{
-		Type:      ebpf.PerCPUCGroupStorage, // BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE
-		KeySize:   12,                       // sizeof(struct bpf_cgroup_storage_key)
-		ValueSize: 8,                        // sizeof(__u64)
+		Type:       ebpf.PerCPUCGroupStorage, // BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE
+		KeySize:    12,                       // sizeof(struct bpf_cgroup_storage_key)
+		ValueSize:  8,                        // sizeof(__u64)
+		MaxEntries: 1,                        // Should be zero for this map type
 	}
 	cgroupNetworkMap, err := ebpf.NewMap(cgroupNetworkMapSpec)
 	if err != nil {

@@ -219,7 +219,6 @@ func init() {
 			log.Fatalf("creating cgroup map: %v", err)
 		}
 	}
-
 }
 
 func main() {

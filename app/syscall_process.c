@@ -7,8 +7,7 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
-#include <netinet/ip.h>
-#include <netinet/ip6.h>
+#include "ip.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL"; 
 
