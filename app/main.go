@@ -188,18 +188,6 @@ func createTracePointMap() error {
 		log.Fatalf("program not found: %v", "ingress")
 	}
 
-	for _, direction := range cgroup.BPFCgroupNetworkDirections {
-		link, err := link.AttachCgroup(link.CgroupOptions{
-			Path:    TARGET_CGROUP_V2_PATH,
-			Attach:  direction.AttachType,
-			Program: collec.Programs[direction.Name],
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer link.Close()
-	}
-
 	return nil
 
 }
@@ -222,6 +210,13 @@ func init() {
 			log.Info("perf event array map already exists")
 		} else {
 			log.Fatalf("creating perf event array map: %v", err)
+		}
+	}
+	if err := cgroup.CreateCgroupMap(); err != nil {
+		if _, ok := err.(*os.PathError); !ok {
+			log.Info("cgroup map already exists")
+		} else {
+			log.Fatalf("creating cgroup map: %v", err)
 		}
 	}
 
@@ -251,6 +246,21 @@ func main() {
 		updatedFile := strings.TrimPrefix(file, prefixToRemove)
 		updatedFiles = append(updatedFiles, updatedFile)
 	}
+	// update the BPFCgroupNetworkDirections
+	for _, filepath := range updatedFiles {
+		cgroup.BPFCgroupNetworkDirections = append(cgroup.BPFCgroupNetworkDirections, cgroup.BPFCgroupNetworkDirection{
+			Name:       "ingress",
+			AttachType: ebpf.AttachCGroupInetIngress,
+			FilePath:   filepath,
+		})
+		cgroup.BPFCgroupNetworkDirections = append(cgroup.BPFCgroupNetworkDirections, cgroup.BPFCgroupNetworkDirection{
+			Name:       "egress",
+			AttachType: ebpf.AttachCGroupInetEgress,
+			FilePath:   filepath,
+		})
+	}
+	// Attach the program to monitor the network traffic
+	cgroup.AttachBPFCgroupNetworkDirections()
 
 	var cgroupV2 bool
 
@@ -299,12 +309,12 @@ func main() {
 		if err := maps.Update(uint32(cgroupInodeNum), uint32(innerMap.FD()), ebpf.UpdateAny); err != nil {
 			log.Fatalf("outerMap.Update: %v", err)
 		}
-
 	}
+
 	// main go routine wait until the following go routines terminated
 	// create wait group
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(3)
 	// create go routine for each function
 	go func() {
 		perf.MessagePerfBufferCreateInnerMap("cgroup_events")
@@ -313,6 +323,11 @@ func main() {
 
 	go func() {
 		perf.DeleteFileEvent("container_events")
+		defer wg.Done()
+	}()
+
+	go func() {
+		cgroup.NetworkPacketCount()
 		defer wg.Done()
 	}()
 

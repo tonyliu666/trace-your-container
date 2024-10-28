@@ -1,12 +1,9 @@
 //go:build ignore
-// #include <linux/bpf.h>
-// #include <linux/types.h>
 #define __TARGET_ARCH_x86
 #define MAX_PATH_LEN 64
 #define LIMIT_PATH_LEN(x) ((x) & (MAX_PATH_LEN - 1))
 # include "common.h"
 #include <bpf/bpf_helpers.h>
-  // For task_struct and process-related functions
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"

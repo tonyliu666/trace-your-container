@@ -16,4 +16,6 @@ var (
 	// read the output "max user processes" from ulimit -a
 	MaxMumProcessSizeInContainer int
 	EbpfCollection               *ebpf.Collection
+	// for counting the number of packets
+	CgroupNetworkMap *ebpf.Map
 )
