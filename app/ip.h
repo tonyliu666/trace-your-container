@@ -25,11 +25,6 @@ struct ip6_hdr
 #define __swap16gen(x)							\
     (uint16_t)(((uint16_t)(x) & 0xffU) << 8 | ((uint16_t)(x) & 0xff00U) >> 8)
 
-
-// static __inline __swap16md(x)
-// {
-// 	return (__swap16gen(x));
-// }
 static __inline uint16_t __swap16md(uint16_t x) {
     return __swap16gen(x);
 }

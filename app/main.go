@@ -71,6 +71,43 @@ func createOuterMap() error {
 	}
 	return nil
 }
+func createCgroupMap() error {
+	// create ingress map for cgroup
+	mapSpec := &ebpf.MapSpec{
+		Type:       ebpf.Hash,
+		KeySize:    4,
+		ValueSize:  4,
+		MaxEntries: 128, // Set appropriate max entries
+	}
+	// Create the map
+	cgroupMap, err := ebpf.NewMap(mapSpec)
+	if err != nil {
+		log.Println("error")
+		log.Fatalf("failed to create cgroup map: %v", err)
+	}
+	util.CgroupIngressMap = cgroupMap
+	if err := util.CgroupIngressMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
+		return err
+	}
+	mapSpec = &ebpf.MapSpec{
+		Type:       ebpf.Hash,
+		KeySize:    4,
+		ValueSize:  4,
+		MaxEntries: 128, // Set appropriate max entries
+	}
+	// Create the map
+	cgroupMap, err = ebpf.NewMap(mapSpec)
+	if err != nil {
+		log.Fatalf("failed to create cgroup map: %v", err)
+	}
+	util.CgroupEgressMap = cgroupMap
+	if err := util.CgroupEgressMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
+		return err
+	}
+	return nil
+
+}
+
 func perfEventArrayMap() error {
 	mapSpec := &ebpf.MapSpec{
 		Type:      ebpf.PerfEventArray,
@@ -104,7 +141,7 @@ func perfEventArrayMap() error {
 	return nil
 }
 
-func createTracePointMap() error {
+func loadBPFProgram() error {
 	if util.EbpfCollection == nil {
 		spec, err := ebpf.LoadCollectionSpec(objFileName)
 		if err != nil {
@@ -112,6 +149,7 @@ func createTracePointMap() error {
 		}
 		coll, err := ebpf.NewCollection(spec)
 		if err != nil {
+			log.Println("error")
 			log.Errorf("collection error: %v", err)
 		}
 		util.EbpfCollection = coll
@@ -212,7 +250,7 @@ func init() {
 			log.Fatalf("creating perf event array map: %v", err)
 		}
 	}
-	if err := cgroup.CreateCgroupMap(); err != nil {
+	if err := createCgroupMap(); err != nil {
 		if _, ok := err.(*os.PathError); !ok {
 			log.Info("cgroup map already exists")
 		} else {
@@ -222,8 +260,8 @@ func init() {
 }
 
 func main() {
-	if err := createTracePointMap(); err != nil {
-		log.Fatalf("create tracepoint map: %v", err)
+	if err := loadBPFProgram(); err != nil {
+		log.Fatalf("load program error : %v", err)
 	}
 	// for each value in tracepointMaps, defer the close
 	for _, tp := range util.TracepointMaps {

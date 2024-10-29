@@ -25,11 +25,21 @@ struct {
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
 
-struct{
-    __uint(type, BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE);
-    __type(key, struct bpf_cgroup_storage_key);
-    __type(value, __u64);
-} cgroup_network_map SEC("maps");
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u32);
+    __type(value, __u32);
+    __uint(max_entries, 1024); 
+} cgroup_ingress_map SEC("maps");
+
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u32);
+    __type(value, __u32);
+    __uint(max_entries, 1024); 
+} cgroup_egress_map SEC("maps");
+
 
 struct event {
     u32 cgroupID; 
@@ -214,7 +224,6 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
     // Print the final constructed path without the null terminator
     bpf_printk("Unlinking file: %s\n", event.path+event.offsets);
    
-    // don't use BPF_F_CURRENT_CPU
     int ret = bpf_perf_event_output(ctx, &container_events, BPF_F_CURRENT_CPU, &event, sizeof(event));
     if (ret == -2) {
         bpf_printk("Error sending to perf event buffer: %d\n", ret);
@@ -243,7 +252,6 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
        return 0;
     }
     else{
-        // bpf_printk("process %d in cgroup %d call system call id %ld\n", pid, cgroupId, syscall_id);
         // insert the syscallID into the inner map and the count of the syscallID
         u32 syscallID_key = (u32)syscall_id;
         
@@ -259,9 +267,10 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     
     return 0;
 }
-inline int handle_skb(struct __sk_buff *skb)
+inline int handle_skb(struct __sk_buff *skb, bool ingress, __u32 cgroup_id)
 {
-    __u16 bytes = 0;
+    __u64 bytes = 0;
+    u64 *count; 
 
     // Extract packet size from IPv4 / IPv6 header
     switch (skb->family)
@@ -288,9 +297,27 @@ inline int handle_skb(struct __sk_buff *skb)
     }
 
     // Update counters in the per-cgroup map
-    __u64 *bytes_counter = bpf_get_local_storage(&cgroup_network_map, 0);
-    __sync_fetch_and_add(bytes_counter, bytes);
-
+    if (ingress)
+    {
+        count = bpf_map_lookup_elem(&cgroup_ingress_map, &cgroup_id);
+        if (!count){
+        bpf_map_update_elem(&cgroup_ingress_map, &cgroup_id, &bytes, BPF_ANY);
+        }
+        else{
+            __sync_fetch_and_add(count, bytes);
+        }
+    }
+    else
+    {
+        count = bpf_map_lookup_elem(&cgroup_egress_map , &cgroup_id);
+        if (!count){
+        bpf_map_update_elem(&cgroup_egress_map, &cgroup_id, &bytes, BPF_ANY);
+        }
+        else{
+            __sync_fetch_and_add(count, bytes);
+        }
+    }
+    
     // Let the packet pass
     return true;
 }
@@ -298,10 +325,14 @@ inline int handle_skb(struct __sk_buff *skb)
 
 SEC("cgroup_skb/ingress") 
 int ingress(struct __sk_buff *skb){
-    return handle_skb(skb);
+    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    bpf_printk("ingress cgroup id: %d\n", cgroupId);
+    return handle_skb(skb, true, cgroupId);
 }
 // Egress hook - handle outgoing packets
 SEC("cgroup_skb/egress") 
 int egress(struct __sk_buff *skb){
-    return handle_skb(skb);
+    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    bpf_printk("egress cgroup id: %d\n", cgroupId);
+    return handle_skb(skb, false, cgroupId);
 }

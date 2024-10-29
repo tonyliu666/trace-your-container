@@ -17,11 +17,12 @@ type BPFCgroupNetworkDirection struct {
 	AttachType ebpf.AttachType
 	FilePath   string
 }
-type BpfCgroupStorageKey struct {
-	CgroupInodeId uint64
-	AttachType    ebpf.AttachType
-}
-type perCPUCounters []uint64
+
+// type BpfCgroupStorageKey struct {
+// 	CgroupInodeId uint64
+// 	AttachType    ebpf.AttachType
+// }
+// type perCPUCounters []uint64
 
 var BPFCgroupNetworkDirections = []BPFCgroupNetworkDirection{}
 
@@ -40,13 +41,6 @@ func AttachBPFCgroupNetworkDirections() {
 
 }
 
-func sumPerCpuCounters(perCpuCounters perCPUCounters) uint64 {
-	sum := uint64(0)
-	for _, counter := range perCpuCounters {
-		sum += counter
-	}
-	return sum
-}
 func NetworkPacketCount() {
 	// Wait until signaled
 	c := make(chan os.Signal, 1)
@@ -55,6 +49,7 @@ func NetworkPacketCount() {
 
 	// Periodically check counters
 	ticker := time.NewTicker(5 * time.Second)
+	packetNum := uint64(0)
 	for {
 		select {
 		case <-ticker.C:
@@ -62,23 +57,24 @@ func NetworkPacketCount() {
 
 			for cgroupInodeId, _ := range util.ProcessIDMaps {
 				for _, direction := range BPFCgroupNetworkDirections {
-					var perCPUCounters perCPUCounters
-
-					mapKey := BpfCgroupStorageKey{
-						CgroupInodeId: cgroupInodeId,
-						AttachType:    direction.AttachType,
-					}
-
-					if err := util.CgroupNetworkMap.Lookup(mapKey, &perCPUCounters); err != nil {
-						log.Printf("%s: error reading map (%v)", direction.Name, err)
+					if direction.Name == "ingress" {
+						if err := util.CgroupIngressMap.Lookup(cgroupInodeId, packetNum); err != nil {
+							log.Printf("%s: error reading map (%v)", direction.Name, err)
+						} else {
+							log.Printf("%s: %d\n", direction.Name, packetNum)
+						}
 					} else {
-						log.Printf("%s: %d\n", direction.Name, sumPerCpuCounters(perCPUCounters))
+						if err := util.CgroupEgressMap.Lookup(cgroupInodeId, packetNum); err != nil {
+							log.Printf("%s: error reading map (%v)", direction.Name, err)
+						} else {
+							log.Printf("%s: %d\n", direction.Name, packetNum)
+						}
 					}
 				}
 			}
 		case <-c:
 			log.Println("Exiting...")
-			break
+			return
 		}
 	}
 

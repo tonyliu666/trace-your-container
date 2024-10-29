@@ -17,5 +17,6 @@ var (
 	MaxMumProcessSizeInContainer int
 	EbpfCollection               *ebpf.Collection
 	// for counting the number of packets
-	CgroupNetworkMap *ebpf.Map
+	CgroupIngressMap *ebpf.Map
+	CgroupEgressMap  *ebpf.Map
 )
