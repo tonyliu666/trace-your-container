@@ -104,6 +104,44 @@ func perfEventArrayMap() error {
 	return nil
 }
 
+func createCgroupMap() error {
+	// create ingress map for cgroup
+	mapSpec := &ebpf.MapSpec{
+		Type:       ebpf.Hash,
+		KeySize:    4,
+		ValueSize:  4,
+		MaxEntries: 1024,
+	}
+	// Create the map
+	cgroupMap, err := ebpf.NewMap(mapSpec)
+	if err != nil {
+		log.Println("error")
+		log.Fatalf("failed to create cgroup map: %v", err)
+	}
+	util.CgroupIngressMap = cgroupMap
+	if err := util.CgroupIngressMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
+		return err
+	}
+	mapSpec = &ebpf.MapSpec{
+		Type:       ebpf.Hash,
+		KeySize:    4,
+		ValueSize:  4,
+		MaxEntries: 1024,
+	}
+	// Create the map
+	cgroupMap, err = ebpf.NewMap(mapSpec)
+	if err != nil {
+		log.Println("egress error")
+		log.Fatalf("failed to create cgroup map: %v", err)
+	}
+	util.CgroupEgressMap = cgroupMap
+	if err := util.CgroupEgressMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
+		return err
+	}
+	return nil
+
+}
+
 func createTracePointMap() error {
 	if util.EbpfCollection == nil {
 		spec, err := ebpf.LoadCollectionSpec(objFileName)
@@ -182,24 +220,6 @@ func createTracePointMap() error {
 	}
 	util.TracepointMaps["sys_enter"] = tp
 
-	// atttach to cgroup_skb/ingress
-	prog = util.EbpfCollection.Programs["ingress"]
-	if prog == nil {
-		log.Fatalf("program not found: %v", "ingress")
-	}
-
-	for _, direction := range cgroup.BPFCgroupNetworkDirections {
-		link, err := link.AttachCgroup(link.CgroupOptions{
-			Path:    TARGET_CGROUP_V2_PATH,
-			Attach:  direction.AttachType,
-			Program: collec.Programs[direction.Name],
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer link.Close()
-	}
-
 	return nil
 
 }
@@ -224,16 +244,19 @@ func init() {
 			log.Fatalf("creating perf event array map: %v", err)
 		}
 	}
+	if err := createCgroupMap(); err != nil {
+		if _, ok := err.(*os.PathError); !ok {
+			log.Info("cgroup map already exists")
+		} else {
+			log.Fatalf("creating cgroup map: %v", err)
+		}
+	}
 
 }
 
 func main() {
 	if err := createTracePointMap(); err != nil {
 		log.Fatalf("create tracepoint map: %v", err)
-	}
-	// for each value in tracepointMaps, defer the close
-	for _, tp := range util.TracepointMaps {
-		defer tp.Close()
 	}
 
 	dirPath := "/sys/fs/cgroup/system.slice"
@@ -250,6 +273,27 @@ func main() {
 	for _, file := range files {
 		updatedFile := strings.TrimPrefix(file, prefixToRemove)
 		updatedFiles = append(updatedFiles, updatedFile)
+	}
+
+	// update the BPFCgroupNetworkDirections
+	for _, filepath := range updatedFiles {
+		cgroup.BPFCgroupNetworkDirections = append(cgroup.BPFCgroupNetworkDirections, cgroup.BPFCgroupNetworkDirection{
+			Name:       "ingress",
+			AttachType: ebpf.AttachCGroupInetIngress,
+			FilePath:   prefixToRemove + filepath,
+		})
+		cgroup.BPFCgroupNetworkDirections = append(cgroup.BPFCgroupNetworkDirections, cgroup.BPFCgroupNetworkDirection{
+			Name:       "egress",
+			AttachType: ebpf.AttachCGroupInetEgress,
+			FilePath:   prefixToRemove + filepath,
+		})
+	}
+	// Attach the program to monitor the network traffic
+	cgroup.AttachBPFCgroupNetworkDirections()
+
+	// for each value in tracepointMaps, defer the close
+	for _, tp := range util.TracepointMaps {
+		defer tp.Close()
 	}
 
 	var cgroupV2 bool

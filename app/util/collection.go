@@ -16,4 +16,6 @@ var (
 	// read the output "max user processes" from ulimit -a
 	MaxMumProcessSizeInContainer int
 	EbpfCollection               *ebpf.Collection
+	CgroupEgressMap              *ebpf.Map
+	CgroupIngressMap             *ebpf.Map
 )

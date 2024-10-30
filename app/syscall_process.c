@@ -10,8 +10,7 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 #include "vmlinux.h"
-#include <netinet/ip.h>
-#include <netinet/ip6.h>
+#include "ip.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL"; 
 
@@ -29,23 +28,21 @@ struct {
     __array(values, struct inner_map);
 } outer_map SEC(".maps");
 
-struct{
-    __uint(type, BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE);
-    __type(key, struct bpf_cgroup_storage_key);
-    __type(value, __u64);
-} cgroup_network_map SEC("maps");
 
-struct event {
-    u32 cgroupID; 
-    int createORdelete;
-};
-struct path_event {
-    char path[MAX_PATH_LEN];
-    int offsets;
-};
-struct test_event{
-    u32 offsets;
-};
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, u32);
+    __type(value, u32);
+    __uint(max_entries, 1024); 
+} cgroup_ingress_map SEC("maps");
+
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, u32);
+    __type(value, u32);
+    __uint(max_entries, 1024); 
+} cgroup_egress_map SEC("maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
@@ -58,6 +55,15 @@ struct {
 	__uint(key_size, sizeof(u32));
 	__uint(value_size, sizeof(u32));
 } container_events SEC(".maps");
+
+struct event {
+    u32 cgroupID; 
+    int createORdelete;
+};
+struct path_event {
+    char path[MAX_PATH_LEN];
+    int offsets;
+};
 
 SEC("raw_tracepoint/cgroup_mkdir")
 int on_cgroup_create(struct bpf_raw_tracepoint_args *ctx) {
@@ -263,49 +269,102 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     
     return 0;
 }
-inline int handle_skb(struct __sk_buff *skb)
+static __always_inline int handle_skb(struct __sk_buff *skb, bool ingress, __u32 cgroup_id)
 {
-    __u16 bytes = 0;
-
-    // Extract packet size from IPv4 / IPv6 header
-    switch (skb->family)
-    {
-    case AF_INET:
-        {
-            struct iphdr iph;
-            bpf_skb_load_bytes(skb, 0, &iph, sizeof(struct iphdr));
-            bytes = ntohs(iph.tot_len);
-            break;
-        }
-    case AF_INET6:
-        {
-            struct ip6_hdr ip6h;
-            bpf_skb_load_bytes(skb, 0, &ip6h, sizeof(struct ip6_hdr));
-            bytes = ntohs(ip6h.ip6_plen);
-            break;
-        }
-    default:
-        // This should never be the case as this eBPF hook is called in
-        // netfilter context and thus not for AF_PACKET, AF_UNIX nor AF_NETLINK
-        // for instance.
-        return true;
-    }
-
-    // Update counters in the per-cgroup map
-    __u64 *bytes_counter = bpf_get_local_storage(&cgroup_network_map, 0);
-    __sync_fetch_and_add(bytes_counter, bytes);
-
+    
+    
     // Let the packet pass
-    return true;
+    return 0;
 }
 
 
-SEC("cgroup_skb/ingress") 
-int ingress(struct __sk_buff *skb){
-    return handle_skb(skb);
-}
-// Egress hook - handle outgoing packets
-SEC("cgroup_skb/egress") 
-int egress(struct __sk_buff *skb){
-    return handle_skb(skb);
-}
+// SEC("cgroup_skb/ingress") 
+// int ingress(struct __sk_buff *skb){
+//     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+//     bpf_printk("ingress cgroup id: %d\n", cgroupId);
+//     // handle_skb(skb, true, cgroupId);
+//     __u64 bytes = 0;
+//     u64 *count; 
+
+//     // Extract packet size from IPv4 / IPv6 header
+//     switch (skb->family)
+//     {
+//     case AF_INET:
+//         {
+//             struct iphdr iph;
+//             bpf_skb_load_bytes(skb, 0, &iph, sizeof(struct iphdr));
+//             bytes = ntohs(iph.tot_len);
+//             break;
+//         }
+//     case AF_INET6:
+//         {
+//             struct ip6_hdr ip6h;
+//             bpf_skb_load_bytes(skb, 0, &ip6h, sizeof(struct ip6_hdr));
+//             bytes = ntohs(ip6h.ip6_plen);
+//             break;
+//         }
+//     default:
+//         // This should never be the case as this eBPF hook is called in
+//         // netfilter context and thus not for AF_PACKET, AF_UNIX nor AF_NETLINK
+//         // for instance.
+//         return true;
+//     }
+
+//     // Update counters in the per-cgroup map
+    
+//         count = bpf_map_lookup_elem(&cgroup_ingress_map, &cgroupId);
+//         if (!count){
+//         bpf_map_update_elem(&cgroup_ingress_map, &cgroupId, &bytes, BPF_ANY);
+//         }
+//         else{
+//             __sync_fetch_and_add(count, bytes);
+//         }
+    
+//     return 0;
+// }
+// // Egress hook - handle outgoing packets
+// SEC("cgroup_skb/egress") 
+// int egress(struct __sk_buff *skb){
+//     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+//     bpf_printk("egress cgroup id: %d\n", cgroupId);
+//     __u64 bytes = 0;
+//     u64 *count; 
+
+//     // Extract packet size from IPv4 / IPv6 header
+//     switch (skb->family)
+//     {
+//     case AF_INET:
+//         {
+//             struct iphdr iph;
+//             bpf_skb_load_bytes(skb, 0, &iph, sizeof(struct iphdr));
+//             bytes = ntohs(iph.tot_len);
+//             break;
+//         }
+//     case AF_INET6:
+//         {
+//             struct ip6_hdr ip6h;
+//             bpf_skb_load_bytes(skb, 0, &ip6h, sizeof(struct ip6_hdr));
+//             bytes = ntohs(ip6h.ip6_plen);
+//             break;
+//         }
+//     default:
+//         // This should never be the case as this eBPF hook is called in
+//         // netfilter context and thus not for AF_PACKET, AF_UNIX nor AF_NETLINK
+//         // for instance.
+//         return true;
+//     }
+
+//     // Update counters in the per-cgroup map
+    
+//         count = bpf_map_lookup_elem(&cgroup_egress_map , &cgroupId);
+//         if (!count){
+//         bpf_map_update_elem(&cgroup_egress_map, &cgroupId, &bytes, BPF_ANY);
+//         }
+//         else{
+//             __sync_fetch_and_add(count, bytes);
+//         }
+    
+
+
+//     return 0;
+// }
