@@ -323,8 +323,8 @@ int ingress(struct __sk_buff *skb){
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
     bpf_printk("ingress cgroup id: %d\n", cgroupId);
     // handle_skb(skb, true, cgroupId);
-    __u64 bytes = 0;
-    u64 *count; 
+    u32 bytes = 0;
+    u32 *count; 
     // Extract packet size from IPv4 / IPv6 header
     switch (skb->family)
     {
@@ -348,9 +348,9 @@ int ingress(struct __sk_buff *skb){
            
         count = bpf_map_lookup_elem(&cgroup_ingress_map, &cgroupId);
         if (count){
-            *count+=bytes;
-            // __sync_fetch_and_add(count, bytes);
-            bpf_map_update_elem(&cgroup_ingress_map, &cgroupId, &count, BPF_ANY);
+            //*count+=bytes;
+            __sync_fetch_and_add(count, bytes);
+            // bpf_map_update_elem(&cgroup_ingress_map, &cgroupId, &count, BPF_ANY);
 
         }
         else{
@@ -367,8 +367,8 @@ int egress(struct __sk_buff *skb){
     bpf_printk("egress cgroup id: %d\n", cgroupId);
 
     // handle_skb(skb, true, cgroupId);
-    __u64 bytes = 0;
-    u64 *count; 
+    u32 bytes = 0;
+    u32 *count; 
     // Extract packet size from IPv4 / IPv6 header
     switch (skb->family)
     {
@@ -392,9 +392,9 @@ int egress(struct __sk_buff *skb){
           
     count = bpf_map_lookup_elem(&cgroup_egress_map, &cgroupId);
     if (count){
-        // __sync_fetch_and_add(count, bytes);
-        *count+=bytes;
-        bpf_map_update_elem(&cgroup_egress_map, &cgroupId, &count, BPF_ANY);
+        __sync_fetch_and_add(count, bytes);
+        // *count+=bytes;
+        // bpf_map_update_elem(&cgroup_egress_map, &cgroupId, &count, BPF_ANY);
 
     }
     else{

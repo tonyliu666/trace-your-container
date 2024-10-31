@@ -18,7 +18,7 @@ var BPFCgroupNetworkDirections = []BPFCgroupNetworkDirection{}
 
 func AttachBPFCgroupNetworkDirections() {
 	for _, direction := range BPFCgroupNetworkDirections {
-		log.Println("Attaching", direction.Name, "to", direction.FilePath)
+
 		link, err := link.AttachCgroup(link.CgroupOptions{
 			Path:    direction.FilePath,
 			Attach:  direction.AttachType,
