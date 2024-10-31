@@ -43,6 +43,13 @@ func getSystemMaxProcessNumber() (int, error) {
 	return maxProcessNum, nil
 
 }
+func theCollectionClose() {
+	util.OuterMap.Close()
+	util.PerfMap.Close()
+	util.ContainerEventMap.Close()
+	util.CgroupEgressMap.Close()
+	util.CgroupIngressMap.Close()
+}
 
 func createOuterMap() error {
 	/// Create the outer map spec for Hash of Maps
@@ -119,9 +126,9 @@ func createCgroupMap() error {
 		log.Fatalf("failed to create cgroup map: %v", err)
 	}
 	util.CgroupIngressMap = cgroupMap
-	if err := util.CgroupIngressMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
-		return err
-	}
+	// if err := util.CgroupIngressMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
+	// 	return err
+	// }
 	egressMapSpec := &ebpf.MapSpec{
 		Type:       ebpf.Hash,
 		KeySize:    4,
@@ -138,9 +145,10 @@ func createCgroupMap() error {
 	if util.CgroupEgressMap == nil {
 		log.Fatalf("CgroupEgressMap is nil here")
 	}
-	if err := util.CgroupEgressMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
-		return err
-	}
+	// if err := util.CgroupEgressMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
+	// 	return err
+	// }
+
 	return nil
 
 }
@@ -299,6 +307,8 @@ func main() {
 	for _, tp := range util.TracepointMaps {
 		defer tp.Close()
 	}
+	// for each map in collection.go, defer the close
+	defer theCollectionClose()
 
 	var cgroupV2 bool
 

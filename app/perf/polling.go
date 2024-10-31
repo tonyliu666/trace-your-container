@@ -69,10 +69,12 @@ func MessagePerfBufferCreateInnerMap(perfName string) {
 			if err != nil {
 				log.Fatalf("Error deleting entry from ingress hashmap: %v\n", err)
 			}
+			log.Printf("Deleted ingress hashmap %d entry\n", event.CgroupID)
 			err = cgroup.DeleteEntryFromEgressHashMap(event.CgroupID)
 			if err != nil {
 				log.Fatalf("Error deleting entry from egress hashmap: %v\n", err)
 			}
+			log.Printf("Deleted egress hashmap %d entry\n", event.CgroupID)
 
 		}
 	}

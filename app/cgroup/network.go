@@ -58,6 +58,9 @@ func DeleteEntryFromIngressHashMap(cgroupID uint32) error {
 	return nil
 }
 func DeleteEntryFromEgressHashMap(cgroupID uint32) error {
+	if util.CgroupEgressMap == nil {
+		log.Fatalf("CgroupEgressMap is nil")
+	}
 	err := util.CgroupEgressMap.Delete(&cgroupID)
 	if err != nil {
 		return err
