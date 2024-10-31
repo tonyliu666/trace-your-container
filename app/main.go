@@ -106,14 +106,14 @@ func perfEventArrayMap() error {
 
 func createCgroupMap() error {
 	// create ingress map for cgroup
-	mapSpec := &ebpf.MapSpec{
+	ingressMapSpec := &ebpf.MapSpec{
 		Type:       ebpf.Hash,
 		KeySize:    4,
 		ValueSize:  4,
 		MaxEntries: 1024,
 	}
 	// Create the map
-	cgroupMap, err := ebpf.NewMap(mapSpec)
+	cgroupMap, err := ebpf.NewMap(ingressMapSpec)
 	if err != nil {
 		log.Println("error")
 		log.Fatalf("failed to create cgroup map: %v", err)
@@ -122,19 +122,22 @@ func createCgroupMap() error {
 	if err := util.CgroupIngressMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
 		return err
 	}
-	mapSpec = &ebpf.MapSpec{
+	egressMapSpec := &ebpf.MapSpec{
 		Type:       ebpf.Hash,
 		KeySize:    4,
 		ValueSize:  4,
 		MaxEntries: 1024,
 	}
 	// Create the map
-	cgroupMap, err = ebpf.NewMap(mapSpec)
+	cgroupNewMap, err := ebpf.NewMap(egressMapSpec)
 	if err != nil {
 		log.Println("egress error")
 		log.Fatalf("failed to create cgroup map: %v", err)
 	}
-	util.CgroupEgressMap = cgroupMap
+	util.CgroupEgressMap = cgroupNewMap
+	if util.CgroupEgressMap == nil {
+		log.Fatalf("CgroupEgressMap is nil here")
+	}
 	if err := util.CgroupEgressMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
 		return err
 	}
@@ -255,6 +258,7 @@ func init() {
 }
 
 func main() {
+
 	if err := createTracePointMap(); err != nil {
 		log.Fatalf("create tracepoint map: %v", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"docker_cgroup/util"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cilium/ebpf/perf"
@@ -47,13 +48,32 @@ func MessagePerfBufferCreateInnerMap(perfName string) {
 			if err != nil {
 				fmt.Printf("Error inserting entry to inner map: %v\n", err)
 			}
-			fmt.Printf("Inserted inner map %d to the entry of outer map\n", event.CgroupID)
+			log.Printf("Inserted inner map %d to the entry of outer map\n", event.CgroupID)
+			err = cgroup.InsertEntryToIngressHashMap(event.CgroupID)
+			if err != nil {
+				log.Fatalf("Error inserting entry to ingress hashmap: %v\n", err)
+			}
+			log.Printf("Inserted ingress hashmap %d entry\n", event.CgroupID)
+			err = cgroup.InsertEntryToEgressHashMap(event.CgroupID)
+			if err != nil {
+				log.Fatalf("Error inserting entry to egress hashmap: %v\n", err)
+			}
+			log.Printf("Inserted egress hashmap %d entry\n", event.CgroupID)
 		} else {
 			err = cgroup.DeleteEntryFromInnerMap(event.CgroupID)
 			if err != nil {
 				fmt.Printf("Error deleting entry from inner map: %v\n", err)
 			}
-			fmt.Printf("Deleted inner map %d from the entry of outer map\n", event.CgroupID)
+			log.Printf("Deleted inner map %d from the entry of outer map\n", event.CgroupID)
+			err = cgroup.DeleteEntryFromIngressHashMap(event.CgroupID)
+			if err != nil {
+				log.Fatalf("Error deleting entry from ingress hashmap: %v\n", err)
+			}
+			err = cgroup.DeleteEntryFromEgressHashMap(event.CgroupID)
+			if err != nil {
+				log.Fatalf("Error deleting entry from egress hashmap: %v\n", err)
+			}
+
 		}
 	}
 }

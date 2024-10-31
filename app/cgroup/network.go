@@ -31,3 +31,36 @@ func AttachBPFCgroupNetworkDirections() {
 	}
 
 }
+func InsertEntryToIngressHashMap(cgroupID uint32) error {
+	value := uint32(0)
+	err := util.CgroupIngressMap.Update(&cgroupID, &value, 0)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func InsertEntryToEgressHashMap(cgroupID uint32) error {
+	value := uint32(0)
+	if util.CgroupEgressMap == nil {
+		log.Fatalf("CgroupEgressMap is nil")
+	}
+	err := util.CgroupEgressMap.Update(&cgroupID, &value, 0)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func DeleteEntryFromIngressHashMap(cgroupID uint32) error {
+	err := util.CgroupIngressMap.Delete(&cgroupID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+func DeleteEntryFromEgressHashMap(cgroupID uint32) error {
+	err := util.CgroupEgressMap.Delete(&cgroupID)
+	if err != nil {
+		return err
+	}
+	return nil
+}
