@@ -43,13 +43,6 @@ func getSystemMaxProcessNumber() (int, error) {
 	return maxProcessNum, nil
 
 }
-func theCollectionClose() {
-	util.OuterMap.Close()
-	util.PerfMap.Close()
-	util.ContainerEventMap.Close()
-	util.CgroupEgressMap.Close()
-	util.CgroupIngressMap.Close()
-}
 
 func createOuterMap() error {
 	/// Create the outer map spec for Hash of Maps
@@ -70,10 +63,9 @@ func createOuterMap() error {
 	if err != nil {
 		return err
 	}
-	util.OuterMap = outer_map
 
 	// Pin the outer map
-	if err := util.OuterMap.Pin("/sys/fs/bpf/outer_map"); err != nil {
+	if err := outer_map.Pin("/sys/fs/bpf/outer_map"); err != nil {
 		return err
 	}
 	return nil
@@ -90,8 +82,8 @@ func perfEventArrayMap() error {
 	if err != nil {
 		log.Fatalf("failed to create perf event array map: %v", err)
 	}
-	util.PerfMap = cgroupEventsMap
-	if err := util.PerfMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
+
+	if err := cgroupEventsMap.Pin("/sys/fs/bpf/cgroup_events"); err != nil {
 		return err
 	}
 	mapSpec = &ebpf.MapSpec{
@@ -103,8 +95,8 @@ func perfEventArrayMap() error {
 	if err != nil {
 		log.Fatalf("failed to create perf event array map: %v", err)
 	}
-	util.ContainerEventMap = containerEventsMap
-	if err := util.ContainerEventMap.Pin("/sys/fs/bpf/container_events"); err != nil {
+
+	if err := containerEventsMap.Pin("/sys/fs/bpf/container_events"); err != nil {
 		return err
 	}
 
@@ -124,11 +116,13 @@ func createIngressCgroupMap() error {
 	// Create the map
 	cgroupMap, err := ebpf.NewMap(ingressMapSpec)
 	if err != nil {
-		log.Println("error")
 		log.Fatalf("failed to create cgroup map: %v", err)
 	}
-	util.CgroupIngressMap = cgroupMap
-	if err := util.CgroupIngressMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
+	// util.CgroupIngressMap = cgroupMap
+	// if err := util.CgroupIngressMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
+	// 	return err
+	// }
+	if err := cgroupMap.Pin("/sys/fs/bpf/cgroup_ingress_map"); err != nil {
 		return err
 	}
 
@@ -146,11 +140,14 @@ func createEgressCgroupMap() error {
 	if err != nil {
 		log.Fatalf("failed to create cgroup map: %v", err)
 	}
-	util.CgroupEgressMap = cgroupNewMap
-	if util.CgroupEgressMap == nil {
-		log.Fatalf("CgroupEgressMap is nil here")
-	}
-	if err := util.CgroupEgressMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
+	// util.CgroupEgressMap = cgroupNewMap
+	// if util.CgroupEgressMap == nil {
+	// 	log.Fatalf("CgroupEgressMap is nil here")
+	// }
+	// if err := util.CgroupEgressMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
+	// 	return err
+	// }
+	if err := cgroupNewMap.Pin("/sys/fs/bpf/cgroup_egress_map"); err != nil {
 		return err
 	}
 	return nil
@@ -318,7 +315,7 @@ func main() {
 		defer tp.Close()
 	}
 	// for each map in collection.go, defer the close
-	defer theCollectionClose()
+	// defer theCollectionClose()
 
 	var cgroupV2 bool
 
@@ -366,6 +363,16 @@ func main() {
 		// if err := util.OuterMap.Put(uint32(cgroupInodeNum), innerMap); err != nil {
 		if err := maps.Update(uint32(cgroupInodeNum), uint32(innerMap.FD()), ebpf.UpdateAny); err != nil {
 			log.Fatalf("outerMap.Update: %v", err)
+		}
+		// update the ingress hashmap
+		ingressHash := util.EbpfCollection.Maps["cgroup_ingress_map"]
+		if err := ingressHash.Update(uint32(cgroupInodeNum), uint32(0), ebpf.UpdateAny); err != nil {
+			log.Fatalf("ingressHash.Update: %v", err)
+		}
+		// update the egress hashmap
+		egressHash := util.EbpfCollection.Maps["cgroup_egress_map"]
+		if err := egressHash.Update(uint32(cgroupInodeNum), uint32(0), ebpf.UpdateAny); err != nil {
+			log.Fatalf("egressHash.Update: %v", err)
 		}
 
 	}

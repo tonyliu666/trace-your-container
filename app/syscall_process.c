@@ -89,7 +89,7 @@ int on_cgroup_create(struct bpf_raw_tracepoint_args *ctx) {
             bpf_printk("Error sending to perf event buffer: %d\n", ret);
         }
         else if(ret == 0){
-            bpf_printk("send cgroup id to perf event array\n");
+            bpf_printk("send cgroup id %d to perf event array\n", cgroup_id);
         }
         
     }
@@ -121,7 +121,7 @@ int on_cgroup_delete(struct bpf_raw_tracepoint_args *ctx) {
             bpf_printk("Error sending to perf event buffer: %d\n", ret);
         }
         else if(ret == 0){
-            bpf_printk("send cgroup id to perf event array\n");
+             bpf_printk("send cgroup id %d to perf event array\n", cgroup_id);
         }
         
     }
@@ -269,60 +269,8 @@ int sysEnter(struct trace_event_raw_sys_enter *ctx) {
     
     return 0;
 }
-// static __always_inline void handle_skb(struct __sk_buff *skb, bool ingress, __u32 cgroup_id)
-// {
-//     __u64 bytes = 0;
-//     u64 *count; 
-//     // Extract packet size from IPv4 / IPv6 header
-//     switch (skb->family)
-//     {
-//     case AF_INET:
-//         {
-//             struct iphdr iph;
-//             bpf_skb_load_bytes(skb, 0, &iph, sizeof(struct iphdr));
-//             bytes = ntohs(iph.tot_len);
-//             break;
-//         }
-//     case AF_INET6:
-//         {
-//             struct ip6_hdr ip6h;
-//             bpf_skb_load_bytes(skb, 0, &ip6h, sizeof(struct ip6_hdr));
-//             bytes = ntohs(ip6h.ip6_plen);
-//             break;
-//         }
-//     }
-
-//     // Update counters in the per-cgroup map
-//     if (ingress)
-//     {
-    
-//         count = bpf_map_lookup_elem(&cgroup_ingress_map, &cgroup_id);
-//         if (!count){
-//             bpf_map_update_elem(&cgroup_ingress_map, &cgroup_id, &bytes, BPF_ANY);
-//         }
-//         else{
-//             __sync_fetch_and_add(count, bytes);
-//         }
-//     }
-//     else{
-//         count = bpf_map_lookup_elem(&cgroup_egress_map , &cgroup_id);
-//         if (!count){
-//         bpf_map_update_elem(&cgroup_egress_map, &cgroup_id, &bytes, BPF_ANY);
-//         }
-//         else{
-//             __sync_fetch_and_add(count, bytes);
-//         }
-//     }
-    
-    
-// }
-
-
-SEC("cgroup_skb/ingress") 
-int ingress(struct __sk_buff *skb){
-    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
-    bpf_printk("ingress cgroup id: %d\n", cgroupId);
-    // handle_skb(skb, true, cgroupId);
+static __always_inline void handle_skb(struct __sk_buff *skb, bool ingress, __u32 cgroup_id)
+{
     u32 bytes = 0;
     u32 *count; 
     // Extract packet size from IPv4 / IPv6 header
@@ -345,61 +293,41 @@ int ingress(struct __sk_buff *skb){
     }
 
     // Update counters in the per-cgroup map
-           
-        count = bpf_map_lookup_elem(&cgroup_ingress_map, &cgroupId);
-        if (count){
-            //*count+=bytes;
-            __sync_fetch_and_add(count, bytes);
-            // bpf_map_update_elem(&cgroup_ingress_map, &cgroupId, &count, BPF_ANY);
-
+    if (ingress)
+    {
+    
+        count = bpf_map_lookup_elem(&cgroup_ingress_map, &cgroup_id);
+        if (!count){
+            bpf_map_update_elem(&cgroup_ingress_map, &cgroup_id, &bytes, BPF_ANY);
         }
         else{
-            bpf_map_update_elem(&cgroup_ingress_map, &cgroupId, &bytes, BPF_ANY);
+            __sync_fetch_and_add(count, bytes);
         }
-    
-    
+    }
+    else{
+        count = bpf_map_lookup_elem(&cgroup_egress_map , &cgroup_id);
+        if (!count){
+        bpf_map_update_elem(&cgroup_egress_map, &cgroup_id, &bytes, BPF_ANY);
+        }
+        else{
+            __sync_fetch_and_add(count, bytes);
+        }
+    }
+}
+
+
+SEC("cgroup_skb/ingress") 
+int ingress(struct __sk_buff *skb){
+    u32 cgroupId = (u32)bpf_get_current_cgroup_id();
+    handle_skb(skb, true, cgroupId);
+       
     return 0;
 }
 // Egress hook - handle outgoing packets
 SEC("cgroup_skb/egress") 
 int egress(struct __sk_buff *skb){
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
-    bpf_printk("egress cgroup id: %d\n", cgroupId);
-
-    // handle_skb(skb, true, cgroupId);
-    u32 bytes = 0;
-    u32 *count; 
-    // Extract packet size from IPv4 / IPv6 header
-    switch (skb->family)
-    {
-    case AF_INET:
-        {
-            struct iphdr iph;
-            bpf_skb_load_bytes(skb, 0, &iph, sizeof(struct iphdr));
-            bytes = ntohs(iph.tot_len);
-            break;
-        }
-    case AF_INET6:
-        {
-            struct ip6_hdr ip6h;
-            bpf_skb_load_bytes(skb, 0, &ip6h, sizeof(struct ip6_hdr));
-            bytes = ntohs(ip6h.ip6_plen);
-            break;
-        }
-    }
-
-    // Update counters in the per-cgroup map
-          
-    count = bpf_map_lookup_elem(&cgroup_egress_map, &cgroupId);
-    if (count){
-        __sync_fetch_and_add(count, bytes);
-        // *count+=bytes;
-        // bpf_map_update_elem(&cgroup_egress_map, &cgroupId, &count, BPF_ANY);
-
-    }
-    else{
-        bpf_map_update_elem(&cgroup_egress_map, &cgroupId, &bytes, BPF_ANY);
-    }
-
+    handle_skb(skb, false, cgroupId);
+    
     return 0;
 }
