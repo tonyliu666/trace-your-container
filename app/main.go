@@ -17,8 +17,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	// "strconv"
-
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/rlimit"

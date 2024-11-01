@@ -303,6 +303,7 @@ static __always_inline void handle_skb(struct __sk_buff *skb, bool ingress, __u3
         else{
             __sync_fetch_and_add(count, bytes);
         }
+        bpf_printk("ingress cgroup id %d, increment bytes %d\n", cgroup_id, bytes);
     }
     else{
         count = bpf_map_lookup_elem(&cgroup_egress_map , &cgroup_id);
@@ -312,6 +313,7 @@ static __always_inline void handle_skb(struct __sk_buff *skb, bool ingress, __u3
         else{
             __sync_fetch_and_add(count, bytes);
         }
+        bpf_printk("egress cgroup id %d, increment bytes %d\n", cgroup_id, bytes);
     }
 }
 
@@ -321,7 +323,7 @@ int ingress(struct __sk_buff *skb){
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
     handle_skb(skb, true, cgroupId);
        
-    return 0;
+    return 1;
 }
 // Egress hook - handle outgoing packets
 SEC("cgroup_skb/egress") 
@@ -329,5 +331,5 @@ int egress(struct __sk_buff *skb){
     u32 cgroupId = (u32)bpf_get_current_cgroup_id();
     handle_skb(skb, false, cgroupId);
     
-    return 0;
+    return 1;
 }
