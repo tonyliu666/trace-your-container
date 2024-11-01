@@ -7,6 +7,7 @@ VMLINUX_H := ./vmlinux.h
 all: build_ebpf build_go
 
 build_ebpf: $(VMLINUX_H) $(OBJ)
+docker: build_ebpf docker_build_go
 
 $(VMLINUX_H):
 	bpftool btf dump file /sys/kernel/btf/vmlinux format c > $(VMLINUX_H)
@@ -14,10 +15,13 @@ $(VMLINUX_H):
 $(OBJ): $(SRC) $(VMLINUX_H)
 	$(CC) $(CFLAGS) -c $< -o $@ || (echo "Error building eBPF program"; exit 1)  # Stop on error
 
-build_go:
-	go build main.go || (echo "Error running Go program"; exit 1)  # Stop on error
-	sudo ./main
+docker_build_go:
+	# go build main.go || (echo "Error running Go program"; exit 1)  # Stop on error
+	go build -o main main.go || (echo "Error running Go program"; exit 1)  # Stop on error
 
+build_go:
+	go build -o main main.go || (echo "Error running Go program"; exit 1)  # Stop on error
+	sudo ./main
 clean:
 	rm -f $(OBJ) 
 

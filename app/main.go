@@ -171,7 +171,7 @@ func createTracePointMap() error {
 	tp, err := link.Tracepoint("syscalls", "sys_enter_open", prog, nil)
 
 	if err != nil {
-		log.Fatalf("raw tracepoint error: %v", err)
+		log.Fatalf("raw tracepoint error: 0 %v", err)
 	}
 	util.TracepointMaps["sys_enter"] = tp
 
@@ -185,7 +185,7 @@ func createTracePointMap() error {
 		Program: prog,
 	})
 	if err != nil {
-		log.Fatalf("raw tracepoint error: %v", err)
+		log.Fatalf("raw tracepoint error 1: %v", err)
 	}
 	util.TracepointMaps["cgroup_mkdir"] = tp
 
@@ -199,7 +199,7 @@ func createTracePointMap() error {
 		Program: prog,
 	})
 	if err != nil {
-		log.Fatalf("raw tracepoint error: %v", err)
+		log.Fatalf("raw tracepoint error 2: %v", err)
 	}
 	util.TracepointMaps["cgroup_rmdir"] = tp
 
@@ -211,7 +211,7 @@ func createTracePointMap() error {
 	tp, err = link.Tracepoint("syscalls", "sys_enter_unlink", prog, nil)
 
 	if err != nil {
-		log.Fatalf("raw tracepoint error: %v", err)
+		log.Fatalf("raw tracepoint error 3: %v", err)
 	}
 	util.TracepointMaps["sys_enter_unlink"] = tp
 
@@ -225,7 +225,7 @@ func createTracePointMap() error {
 		AttachType: ebpf.AttachTraceRawTp,
 	})
 	if err != nil {
-		log.Fatalf("raw tracepoint error: %v", err)
+		log.Fatalf("raw tracepoint error 4: %v", err)
 	}
 	util.TracepointMaps["sys_enter"] = tp
 
@@ -255,23 +255,22 @@ func init() {
 	}
 	if err := createIngressCgroupMap(); err != nil {
 		if _, ok := err.(*os.PathError); !ok {
-			log.Info("cgroup map already exists")
+			log.Info("ingress hash already exists")
 		} else {
-			log.Fatalf("creating cgroup map: %v", err)
+			log.Fatalf("creating ingress hash: %v", err)
 		}
 	}
 	if err := createEgressCgroupMap(); err != nil {
 		if _, ok := err.(*os.PathError); !ok {
-			log.Info("cgroup map already exists")
+			log.Info("egress hash already exists")
 		} else {
-			log.Fatalf("creating cgroup map: %v", err)
+			log.Fatalf("creating egress hash: %v", err)
 		}
 	}
 
 }
 
 func main() {
-
 	if err := createTracePointMap(); err != nil {
 		log.Fatalf("create tracepoint map: %v", err)
 	}
@@ -348,13 +347,12 @@ func main() {
 
 	for cgroupInodeNum, _ := range util.ProcessIDMaps {
 		// examine whether the process id exists in the processIDMaps
+		log.Println("cgroupInodeNum:", cgroupInodeNum)
 		innerMapSpec := cgroup.CreateInnerMapSpec(cgroupInodeNum)
 		innerMap, err := ebpf.NewMap(&innerMapSpec)
 		if err != nil {
 			log.Fatalf("inner_map: %v", err)
 		}
-
-		log.Println("cgroupInodeNum:", cgroupInodeNum)
 
 		maps := util.EbpfCollection.Maps["outer_map"]
 
@@ -375,10 +373,8 @@ func main() {
 
 	}
 	// main go routine wait until the following go routines terminated
-	// create wait group
 	wg := sync.WaitGroup{}
 	wg.Add(2)
-	// create go routine for each function
 	go func() {
 		perf.MessagePerfBufferCreateInnerMap("cgroup_events")
 		defer wg.Done()
