@@ -11,7 +11,17 @@ It is leveraging eBPF technology to expose the information about the events occu
 #### Quickstart
 
 * Directly use the docker image: 
-> docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modules:ro -v /etc/localtime:/etc/localtime:ro --pid=host --cgroupns=host  tonyliu666/ebpf-for-mac:v1
+```bash
+docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modules:ro -v /etc/localtime:/etc/localtime:ro --pid=host --cgroupns=host  tonyliu666/ebpf-for-mac:v1
+```
+* or you can build the image: 
+```bash
+docker build -t ebpf-program .
+```
+Then: 
+```bash
+docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modules:ro -v /etc/localtime:/etc/localtime:ro --pid=host --cgroupns=host  ebpf-program
+```
 
 **parameters explaination** : 
 * --privileged: elevated privileges to perform tasks that involve accessing kernel tracing features
@@ -21,6 +31,11 @@ It is leveraging eBPF technology to expose the information about the events occu
 * --cgroupns=host: share the namespaces with your host
 
 
-* After running the above command: 
+After running the above command: 
 1. cd app 
 2. make docker
+
+Then enjoy it! 
+
+#### Contributing
+Welcome any who has some interests on my project to contribute your codes. 
