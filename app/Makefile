@@ -18,6 +18,7 @@ $(OBJ): $(SRC) $(VMLINUX_H)
 docker_build_go:
 	# go build main.go || (echo "Error running Go program"; exit 1)  # Stop on error
 	go build -o main main.go || (echo "Error running Go program"; exit 1)  # Stop on error
+	./main
 
 build_go:
 	go build -o main main.go || (echo "Error running Go program"; exit 1)  # Stop on error

@@ -239,6 +239,7 @@ func init() {
 	}
 	// set the maxium number of processes can run in one single container
 	util.MaxMumProcessSizeInContainer, _ = getSystemMaxProcessNumber()
+	log.Infof("MaxMumProcessSizeInContainer: %v", util.MaxMumProcessSizeInContainer)
 	if err := createOuterMap(); err != nil {
 		if _, ok := err.(*os.PathError); !ok {
 			log.Info("outer map already exists")
