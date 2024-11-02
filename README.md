@@ -13,11 +13,14 @@ It is leveraging eBPF technology to expose the information about the events occu
 * Directly use the docker image: 
 > docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modules:ro -v /etc/localtime:/etc/localtime:ro --pid=host --cgroupns=host  tonyliu666/ebpf-for-mac:v1
 
-* parameters explaination: 
---privileged: elevated privileges to perform tasks that involve accessing kernel tracing features
---ulimit: Due to limitation of sizes of ebpf hashOfMap, I would like to set the process limits of the running container
+**parameters explaination** : 
+* --privileged: elevated privileges to perform tasks that involve accessing kernel tracing features
+* --ulimit: Due to limitation of sizes of ebpf hashOfMap, I would like to set the process limits of the running container
+* /lib/modules: share the linux headers on your host with the container so that it can leverage the header files in kernel. 
+* --pid=host: share pid namespace with your host
+* --cgroupns=host: share the namespaces with your host
 
 
 * After running the above command: 
-> cd app 
-> make docker
+1. cd app 
+2. make docker
