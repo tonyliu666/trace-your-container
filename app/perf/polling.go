@@ -22,6 +22,7 @@ type innerMapEvent struct {
 type fileDeleteEvent struct {
 	Filepath [MAX_PATH_LEN]byte // Fixed-size array for the path
 	Offsets  int32              // Match C 'int' to Go 'int32'
+	CgroupID uint32
 }
 
 func MessagePerfBufferCreateInnerMap(perfName string) {
@@ -100,7 +101,7 @@ func DeleteFileEvent(perfName string) {
 			continue
 		}
 		// print the path  combining the path and the offset
-		fmt.Printf("file name: %s\n", event.Filepath[event.Offsets:])
+		fmt.Printf("cgroup ID: %d file name: %s\n", event.CgroupID, event.Filepath[event.Offsets:])
 
 	}
 }

@@ -63,6 +63,7 @@ struct event {
 struct path_event {
     char path[MAX_PATH_LEN];
     int offsets;
+    u32 cgroupID;
 };
 
 SEC("raw_tracepoint/cgroup_mkdir")
@@ -224,6 +225,7 @@ int sysEnterUnlink(struct trace_event_raw_sys_enter *ctx) {
     // Print the final constructed path without the null terminator
     bpf_printk("Unlinking file: %s\n", event.path+event.offsets);
    
+    event.cgroupID = cgroupId;
     // don't use BPF_F_CURRENT_CPU
     int ret = bpf_perf_event_output(ctx, &container_events, BPF_F_CURRENT_CPU, &event, sizeof(event));
     if (ret == -2) {

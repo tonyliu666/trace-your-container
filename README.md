@@ -8,7 +8,13 @@ Trace Your Container is an observability tool that helps you understand the deta
 
 It is leveraging eBPF technology to expose the information about the events occuring in your docker engine, eg: create a container, delete a container, remove a file and collect the system calls of the specific container. 
 
+Currently, Only supports for the kernel version **6.8.0-48-generic**. So if your kernel version is not this one, you could consider about installing Virtual Machine. I have provided a simple guildance for you. 
+
 #### Quickstart
+* Install VM: (you can download the vagrant CLI at first: https://developer.hashicorp.com/vagrant/install)
+```bash
+vagrant up
+```
 
 * Directly use the docker image: 
 ```bash
@@ -22,6 +28,15 @@ Then:
 ```bash
 docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modules:ro -v /etc/localtime:/etc/localtime:ro --pid=host --cgroupns=host  ebpf-program
 ```
+In the ebpf-program container: 
+```bash
+cd app 
+```
+```bash
+make docker
+```
+
+Then enjoy it! 
 
 **parameters explaination** : 
 * --privileged: elevated privileges to perform tasks that involve accessing kernel tracing features
@@ -30,12 +45,7 @@ docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modul
 * --pid=host: share pid namespace with your host
 * --cgroupns=host: share the namespaces with your host
 
-
-After running the above command: 
-1. cd app 
-2. make docker
-
-Then enjoy it! 
+**Demo Video**: 
 
 #### Contributing
 Welcome any who has some interests on my project to contribute your codes. 
