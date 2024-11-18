@@ -11,7 +11,7 @@ It is leveraging eBPF technology to expose the information about the events occu
 Currently, Only supports for the kernel version **6.8.0-48-generic**. So if your kernel version is not this one, you could consider about installing Virtual Machine. I have provided a simple guildance for you. 
 
 #### Quickstart
-* Install VM: (you can download the vagrant CLI at first: https://developer.hashicorp.com/vagrant/install)
+* Install VM: (you can download the vagrant CLI at first: https://developer.hashicorp.com/vagrant/install  and Virtualbox)
 ```bash
 vagrant up
 ```
