@@ -131,7 +131,8 @@ int on_cgroup_delete(struct bpf_raw_tracepoint_args *ctx) {
 
 
 SEC("tracepoint/syscalls/sys_enter_openat")
-int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
+// int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
+int tracepoint__syscalls__sys_enter_open(struct syscall_trace_enter* ctx){
     u32 key;
     u32 pid = (u32)bpf_get_current_pid_tgid();
 
@@ -141,10 +142,9 @@ int tracepoint__syscalls__sys_enter_open(struct trace_event_raw_sys_enter *ctx){
     struct bpf_map* inner_map = bpf_map_lookup_elem(&outer_map, &cgroupId);
 
     char filename[128];
-    
     // Read the first argument to the open syscall, which is the filename
-    bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]);
-    bpf_printk("cgroupId: %d",cgroupId);
+    bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[1]);
+    // bpf_printk("filename: %s, cgroupId: %d\n", filename, cgroupId);
     
     if (!inner_map) {
        return 0;

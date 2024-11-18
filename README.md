@@ -18,7 +18,7 @@ vagrant up
 
 * Directly use the docker image: 
 ```bash
-docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modules:ro -v /etc/localtime:/etc/localtime:ro --pid=host --cgroupns=host  tonyliu666/ebpf-for-mac:v1
+docker run -it --rm  --privileged --ulimit nproc=4096 -v /lib/modules:/lib/modules:ro -v /etc/localtime:/etc/localtime:ro -v /sys/fs/bpf:/sys/fs/bpf --pid=host --cgroupns=host  tonyliu666/ebpf-for-mac:v1
 ```
 * or you can build the image: 
 ```bash
