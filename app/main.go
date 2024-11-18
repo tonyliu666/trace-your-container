@@ -208,7 +208,7 @@ func createTracePointMap() error {
 	if prog == nil {
 		log.Fatalf("program not found: %v", "sysEnterUnlink")
 	}
-	tp, err = link.Tracepoint("syscalls", "sys_enter_unlink", prog, nil)
+	tp, err = link.Tracepoint("syscalls", "sys_enter_unlinkat", prog, nil)
 
 	if err != nil {
 		log.Fatalf("raw tracepoint error 3: %v", err)
